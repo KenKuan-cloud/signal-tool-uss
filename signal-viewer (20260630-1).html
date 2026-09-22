@@ -3702,10 +3702,11 @@ function drawDetectionDurationChart(wrap,activeChs){
       for(let j=s+3;j<=e;j++){
         if(segGroup[j]&&segGroup[j].label==='Echo') echoLsum+=segs[j].dur;
       }
-      sums['Echo'].L.push(echoLsum);
-      // Distance = (D.Start H + Ring L + first H after Ring) in ms × 343/20 → cm
-      const tofSec=segs[s+1].dur+segs[s+2].dur+segs[s+3].dur;
-      sums['Dist'].push(toUs(tofSec)/1000*343/20);
+      if(echoLsum>0){
+        sums['Echo'].L.push(echoLsum);
+        const tofSec=segs[s+1].dur+segs[s+2].dur+segs[s+3].dur;
+        sums['Dist'].push(toUs(tofSec)/1000*343/20);
+      }
       sums['D.End'].H.push(segs[e-1].dur);
       sums['D.End'].L.push((segs[e-2].dur+segs[e].dur)/2);
     });
