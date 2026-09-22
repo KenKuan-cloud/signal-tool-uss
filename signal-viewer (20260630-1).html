@@ -352,6 +352,18 @@ body.compare-active #pdf-btn{display:none !important;}
           <button class="pbtn" id="copy-table-btn" style="font-size:9px;padding:2px 8px;">⎘ Copy Table</button>
         </div>
 
+        <!-- Analysis Mode Selector -->
+        <div id="analysis-mode-bar" style="display:none;flex-direction:row;gap:12px;align-items:center;padding:4px 0;">
+          <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);">
+            Analysis Mode
+            <select id="analysis-mode" style="font-size:10px;padding:2px 4px;background:var(--surface);
+              color:var(--text);border:1px solid var(--border);border-radius:2px;font-family:inherit;">
+              <option value="settings">Settings</option>
+              <option value="detection">Detection</option>
+            </select>
+          </label>
+        </div>
+
         <!-- GPIO Parameter Thresholds -->
         <div id="gpio-param-bar" style="display:none;flex-direction:column;gap:5px;padding:6px 4px;
           border:1px solid var(--border);border-radius:2px;background:var(--bg);margin-bottom:2px;">
@@ -1399,6 +1411,45 @@ function buildSegmentGroups(segs,thr){
   return {segGroup,afterTcmd,pairSpan};
 }
 
+// ── Detection Mode: pattern classifier ──
+// Pattern: L~100µs, H~100µs, L~800-1600µs, H~13ms, L~100µs, H~50µs, L~100µs
+const DET_TOL=0.35;
+const detInR=(v,nom)=>Math.abs(v-nom)/nom<=DET_TOL;
+
+function classifyDetectionSets(segs){
+  const sets=[];
+  const segGroup=new Array(segs.length).fill(null);
+  const setIndex=new Array(segs.length).fill(-1);
+
+  for(let i=0;i<=segs.length-7;i++){
+    if(segs[i].state!=='L'||segs[i+1].state!=='H'||segs[i+2].state!=='L'||
+       segs[i+3].state!=='H'||segs[i+4].state!=='L'||segs[i+5].state!=='H'||
+       segs[i+6].state!=='L') continue;
+    const d=idx=>toUs(segs[idx].dur);
+    if(!detInR(d(i),100)) continue;
+    if(!detInR(d(i+1),100)) continue;
+    const ring=d(i+2);
+    if(ring<800||ring>1600) continue;
+    if(!detInR(d(i+3),13000)) continue;
+    if(!detInR(d(i+4),100)) continue;
+    if(!detInR(d(i+5),50)) continue;
+    if(!detInR(d(i+6),100)) continue;
+
+    const si=sets.length;
+    sets.push({startIdx:i, endIdx:i+6});
+    segGroup[i]  ={label:'D.Start',color:CH_COLORS[2]};
+    segGroup[i+1]={label:'D.Start',color:CH_COLORS[2]};
+    segGroup[i+2]={label:'Ring',   color:CH_COLORS[3]};
+    segGroup[i+3]={label:'—',      color:'var(--muted)'};
+    segGroup[i+4]={label:'—',      color:'var(--muted)'};
+    segGroup[i+5]={label:'D.End',  color:CH_COLORS[0]||'#60a5fa'};
+    segGroup[i+6]={label:'D.End',  color:CH_COLORS[0]||'#60a5fa'};
+    for(let j=i;j<=i+6;j++) setIndex[j]=si;
+    i+=6;
+  }
+  return {sets,segGroup,setIndex};
+}
+
 function redrawCanvases(){
   chunks.forEach((_,ci)=>drawCard(ci));
   if(activeChunk>=0&&chunks[activeChunk]?.expTime) drawExpanded();
@@ -1430,6 +1481,7 @@ let mergeChunkB=-1;                 // 2nd chunk index
 let mergedExpData=null;             // {expTime[], expChs[][]} merged result
 
 // ── Schmitt state ──
+let analysisMode='settings';        // 'settings' or 'detection'
 let schmittResult=[];               // per channel: [{state:'H'|'L', tStart, tEnd, dur}]
 let schmittThresh=[];               // per channel: {lo, hi, min, max}
 let schmittLayout=null;             // {tMin,tMax,W,H,PADs,ROW_H,AXIS_H}
@@ -2920,14 +2972,8 @@ function drawSchmitt(){
     ctx.restore();
 
     // ── NG red box overlay ──
-    const thr=readGpioThresholds();
-    const {segGroup:_segGrp,afterTcmd:_afterTcmd}=buildSegmentGroups(segs,thr);
-    // segGroup returns objects; extract labels for the NG check
-    const _segLbl=_segGrp.map(g=>g?.label||null);
-
     const NG_PAD = 3;
     ctx.save();
-    // Clip NG boxes to the row plot area so they don't overflow when zoomed
     ctx.beginPath();
     ctx.rect(PADs.l,rowTop,pw,ROW_H-6);
     ctx.clip();
@@ -2935,29 +2981,60 @@ function drawSchmitt(){
     ctx.lineWidth = 2;
     ctx.setLineDash([]);
 
-    segs.forEach((seg, si) => {
-      if(seg.tEnd<tMin||seg.tStart>tMax) return;
-      const x1 = tx(seg.tStart), x2 = tx(seg.tEnd);
-      const isH = seg.state === 'H';
-      const grp = _segLbl[si];
-      let ng = false;
+    if(analysisMode==='detection'){
+      const {sets:_detSets,segGroup:_detGrp,setIndex:_detSetIdx}=classifyDetectionSets(segs);
+      const _detExpect={
+        0:{L:[100*(1-DET_TOL),100*(1+DET_TOL)]},
+        1:{H:[100*(1-DET_TOL),100*(1+DET_TOL)]},
+        2:{L:[800,1600]},
+        3:{H:[13000*(1-DET_TOL),13000*(1+DET_TOL)]},
+        4:{L:[100*(1-DET_TOL),100*(1+DET_TOL)]},
+        5:{H:[50*(1-DET_TOL),50*(1+DET_TOL)]},
+        6:{L:[100*(1-DET_TOL),100*(1+DET_TOL)]},
+      };
+      segs.forEach((seg,si)=>{
+        if(seg.tEnd<tMin||seg.tStart>tMax) return;
+        const sIdx=_detSetIdx[si];
+        if(sIdx<0) return;
+        const posInSet=si-_detSets[sIdx].startIdx;
+        const expect=_detExpect[posInSet];
+        if(!expect) return;
+        const st=seg.state==='H'?'H':'L';
+        const range=expect[st];
+        if(!range) return;
+        const val=toUs(seg.dur);
+        if(val<range[0]||val>range[1]){
+          const x1=tx(seg.tStart), x2=tx(seg.tEnd);
+          ctx.strokeRect(x1-1,highY-NG_PAD,x2-x1+2,lowY-highY+2*NG_PAD);
+        }
+      });
+    } else {
+      const thr=readGpioThresholds();
+      const {segGroup:_segGrp,afterTcmd:_afterTcmd}=buildSegmentGroups(segs,thr);
+      const _segLbl=_segGrp.map(g=>g?.label||null);
 
-      if(!isH && grp === 'TCMD') ng = !gpioInRange(toUs(seg.dur), thr.tcmdMin, thr.tcmdMax);
-      if( isH && grp === 'TCMD') ng = !gpioInRange(toUs(seg.dur), thr.tdMin, thr.tdMax);
-      if(_afterTcmd[si] && !isH && grp === '0') ng = !gpioInRange(toUs(seg.dur), thr.lo0Min, thr.lo0Max);
-      if(_afterTcmd[si] && !isH && grp === '1') ng = !gpioInRange(toUs(seg.dur), thr.hi1Min, thr.hi1Max);
-      if(_afterTcmd[si] && !isH && si + 1 < segs.length && segs[si+1].state === 'H' && (grp === '0' || grp === '1')){
-        const delayUs=_segGrp[si]?.delayUs||0;
-        const bl = toUs(seg.dur) + toUs(segs[si+1].dur) - delayUs;
-        if(!gpioInRange(bl, thr.blMin, thr.blMax)) ng = true;
-      }
+      segs.forEach((seg, si) => {
+        if(seg.tEnd<tMin||seg.tStart>tMax) return;
+        const x1 = tx(seg.tStart), x2 = tx(seg.tEnd);
+        const isH = seg.state === 'H';
+        const grp = _segLbl[si];
+        let ng = false;
 
-      if(ng){
-        const yTop = highY - NG_PAD;
-        const yBot = lowY + NG_PAD;
-        ctx.strokeRect(x1 - 1, yTop, x2 - x1 + 2, yBot - yTop);
-      }
-    });
+        if(!isH && grp === 'TCMD') ng = !gpioInRange(toUs(seg.dur), thr.tcmdMin, thr.tcmdMax);
+        if( isH && grp === 'TCMD') ng = !gpioInRange(toUs(seg.dur), thr.tdMin, thr.tdMax);
+        if(_afterTcmd[si] && !isH && grp === '0') ng = !gpioInRange(toUs(seg.dur), thr.lo0Min, thr.lo0Max);
+        if(_afterTcmd[si] && !isH && grp === '1') ng = !gpioInRange(toUs(seg.dur), thr.hi1Min, thr.hi1Max);
+        if(_afterTcmd[si] && !isH && si + 1 < segs.length && segs[si+1].state === 'H' && (grp === '0' || grp === '1')){
+          const delayUs=_segGrp[si]?.delayUs||0;
+          const bl = toUs(seg.dur) + toUs(segs[si+1].dur) - delayUs;
+          if(!gpioInRange(bl, thr.blMin, thr.blMax)) ng = true;
+        }
+
+        if(ng){
+          ctx.strokeRect(x1 - 1, highY - NG_PAD, x2 - x1 + 2, lowY - highY + 2*NG_PAD);
+        }
+      });
+    }
     ctx.restore();
   });
 
@@ -3169,8 +3246,15 @@ function drawDurationChart(){
   if(!wrap) return;
 
   const activeChs=sigNames.map((_,ci)=>ci).filter(ci=>visible[ci]&&schmittResult[ci]?.length);
-  if(!activeChs.length){ wrap.style.display='none'; $('gpio-param-bar').style.display='none'; return; }
+  if(!activeChs.length){ wrap.style.display='none'; $('gpio-param-bar').style.display='none'; $('analysis-mode-bar').style.display='none'; return; }
   wrap.style.display='block';
+  $('analysis-mode-bar').style.display='flex';
+
+  if(analysisMode==='detection'){
+    $('gpio-param-bar').style.display='none';
+    drawDetectionDurationChart(wrap,activeChs);
+    return;
+  }
   $('gpio-param-bar').style.display='flex';
 
   const thr=readGpioThresholds();
@@ -3453,6 +3537,242 @@ function drawDurationChart(){
   wrap.innerHTML=html;
 }
 
+// ── Detection Duration Chart ──
+function drawDetectionDurationChart(wrap,activeChs){
+  const TH=`padding:5px 10px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+    border:1px solid var(--border);text-align:center;white-space:nowrap;background:var(--surface);`;
+  const TD=(color,bold='',align='right')=>
+    `padding:3px 10px;font-size:10px;border:1px solid var(--border);text-align:${align};
+     color:${color};${bold}font-family:JetBrains Mono,monospace;`;
+
+  // Expected values for NG check: [nominal_µs, min_µs, max_µs] or null for no check
+  const DET_EXPECT={
+    0:{L:[100,100*(1-DET_TOL),100*(1+DET_TOL)]},    // D.Start L
+    1:{H:[100,100*(1-DET_TOL),100*(1+DET_TOL)]},    // D.Start H
+    2:{L:[null,800,1600]},                            // Ring L (explicit range)
+    3:{H:[13000,13000*(1-DET_TOL),13000*(1+DET_TOL)]}, // H ~13ms
+    4:{L:[100,100*(1-DET_TOL),100*(1+DET_TOL)]},    // L ~100µs
+    5:{H:[50,50*(1-DET_TOL),50*(1+DET_TOL)]},       // D.End H
+    6:{L:[100,100*(1-DET_TOL),100*(1+DET_TOL)]},    // D.End L
+  };
+
+  let html='';
+
+  activeChs.forEach(ci=>{
+    const segs=schmittResult[ci];
+    if(!segs.length) return;
+
+    const {sets,segGroup,setIndex}=classifyDetectionSets(segs);
+
+    const allDur=segs.map(s=>s.dur);
+    const avgAll=allDur.reduce((a,v)=>a+v,0)/allDur.length;
+    const mn=Math.min(...allDur), mx=Math.max(...allDur);
+
+    html+=`<div class="channel-block" data-ch="${ci}" style="margin-bottom:12px;">
+      <div class="channel-heading" style="font-size:9px;color:${CH_COLORS[ci]};font-weight:600;letter-spacing:.1em;
+        text-transform:uppercase;padding:4px 0 4px 4px;">${sigNames[ci]} — ${sets.length} detection set${sets.length!==1?'s':''}</div>`;
+
+    // Show each detection set and pause between sets
+    sets.forEach((set,si)=>{
+      // Pause before this set (gap from previous set or start)
+      const prevEnd=si>0?sets[si-1].endIdx:-1;
+      if(prevEnd>=0 && set.startIdx>prevEnd+1){
+        let pauseDur=0;
+        for(let k=prevEnd+1;k<set.startIdx;k++) pauseDur+=segs[k].dur;
+        html+=`<div style="padding:4px 8px;font-size:10px;color:var(--muted);background:var(--bg);
+          border:1px solid var(--border);border-radius:2px;margin:6px 0;">
+          Pause: <b style="color:var(--text);">${toUs(pauseDur).toFixed(1)} µs</b>
+          <span style="font-size:9px;"> (${(pauseDur*1000).toFixed(3)} ms)</span></div>`;
+      }
+
+      html+=`<div style="font-size:9px;color:var(--muted);padding:4px 0 2px 4px;letter-spacing:.08em;text-transform:uppercase;">
+        Detection Set ${si+1}</div>`;
+
+      const startI=set.startIdx, endI=set.endIdx;
+      const setSegs=[];
+      for(let k=startI;k<=endI;k++) setSegs.push(segs[k]);
+
+      html+=`<div style="overflow-x:auto;"><table style="border-collapse:collapse;"><tbody>`;
+
+      // Row 1: Pulse #
+      html+=`<tr><td style="${TH}color:var(--muted);min-width:52px;">Pulse #</td>`;
+      setSegs.forEach((_,i)=>{
+        html+=`<td style="${TH}color:var(--muted);min-width:80px;">${i+1}</td>`;
+      });
+      html+=`</tr>`;
+
+      // Row 2: Group labels
+      html+=`<tr><td style="${TD('var(--muted)','','center')}font-size:9px;">Group</td>`;
+      for(let i=0;i<setSegs.length;i++){
+        const g=segGroup[startI+i];
+        if(!g){
+          html+=`<td style="${TD('var(--border)','','center')}font-size:9px;">—</td>`;
+          continue;
+        }
+        const lbl=g.label;
+        // Span D.Start (2 cols), D.End (2 cols) — but only from the first segment of each span
+        if(lbl==='D.Start' && i===0){
+          html+=`<td colspan="2" style="padding:3px 10px;font-size:11px;font-weight:700;
+            border:1px solid var(--border);text-align:center;
+            color:${g.color};background:${g.color}18;
+            font-family:JetBrains Mono,monospace;letter-spacing:.06em;">D.Start</td>`;
+          i++; continue;
+        }
+        if(lbl==='D.End' && i===5){
+          html+=`<td colspan="2" style="padding:3px 10px;font-size:11px;font-weight:700;
+            border:1px solid var(--border);text-align:center;
+            color:${g.color};background:${g.color}18;
+            font-family:JetBrains Mono,monospace;letter-spacing:.06em;">D.End</td>`;
+          i++; continue;
+        }
+        if(lbl==='Ring'){
+          html+=`<td style="padding:3px 10px;font-size:11px;font-weight:700;
+            border:1px solid var(--border);text-align:center;
+            color:${g.color};background:${g.color}18;
+            font-family:JetBrains Mono,monospace;letter-spacing:.06em;">Ring</td>`;
+          continue;
+        }
+        html+=`<td style="${TD('var(--border)','','center')}font-size:9px;">—</td>`;
+      }
+      html+=`</tr>`;
+
+      // Row 3: State
+      html+=`<tr style="background:var(--bg);"><td style="${TD('var(--muted)','','center')}font-size:9px;">State</td>`;
+      setSegs.forEach(seg=>{
+        const isH=seg.state==='H';
+        const color=isH?CH_COLORS[ci]:(isDark?'#6b7a96':'#9ca3af');
+        html+=`<td style="${TD(color,'font-weight:700;','center')}font-size:9px;">${isH?'HIGH':'LOW'}</td>`;
+      });
+      html+=`</tr>`;
+
+      // Row 4: Duration µs with NG check
+      html+=`<tr style="background:var(--surface);"><td style="${TD('var(--text)','','center')}font-size:9px;">µs</td>`;
+      setSegs.forEach((seg,i)=>{
+        const val=toUs(seg.dur);
+        const expect=DET_EXPECT[i];
+        let ng=false;
+        if(expect){
+          const st=seg.state==='H'?'H':'L';
+          const range=expect[st];
+          if(range) ng=val<range[1]||val>range[2];
+        }
+        const bdr=ng?`2px solid ${CH_COLORS[1]}`:'1px solid var(--border)';
+        html+=`<td style="padding:3px 10px;font-size:10px;border:${bdr};text-align:right;
+          color:var(--text);font-family:JetBrains Mono,monospace;">${val.toFixed(1)}</td>`;
+      });
+      html+=`</tr>`;
+
+      html+=`</tbody></table></div>`;
+    });
+
+    // Pause after last set (remaining unmatched segments)
+    if(sets.length>0){
+      const lastEnd=sets[sets.length-1].endIdx;
+      if(lastEnd<segs.length-1){
+        let pauseDur=0;
+        for(let k=lastEnd+1;k<segs.length;k++) pauseDur+=segs[k].dur;
+        if(pauseDur>0){
+          html+=`<div style="padding:4px 8px;font-size:10px;color:var(--muted);background:var(--bg);
+            border:1px solid var(--border);border-radius:2px;margin:6px 0;">
+            Trailing: <b style="color:var(--text);">${toUs(pauseDur).toFixed(1)} µs</b>
+            <span style="font-size:9px;"> (${(pauseDur*1000).toFixed(3)} ms)</span></div>`;
+        }
+      }
+    }
+
+    // ── Summary table: average per detection group ──
+    const sums={'D.Start':{L:[],H:[]}, 'Ring':{L:[]}, 'D.End':{H:[],L:[]}};
+    sets.forEach(set=>{
+      const s=set.startIdx;
+      sums['D.Start'].L.push(segs[s].dur);
+      sums['D.Start'].H.push(segs[s+1].dur);
+      sums['Ring'].L.push(segs[s+2].dur);
+      sums['D.End'].H.push(segs[s+5].dur);
+      sums['D.End'].L.push(segs[s+6].dur);
+    });
+    const avgOrNA=arr=>arr&&arr.length?toUs(arr.reduce((a,v)=>a+v,0)/arr.length).toFixed(1):'NA';
+    const gAvg={
+      'D.Start':{L:avgOrNA(sums['D.Start'].L), H:avgOrNA(sums['D.Start'].H)},
+      'Ring'   :{L:avgOrNA(sums['Ring'].L)},
+      'D.End'  :{H:avgOrNA(sums['D.End'].H), L:avgOrNA(sums['D.End'].L)},
+    };
+    const gN={
+      'D.Start':{L:sums['D.Start'].L.length, H:sums['D.Start'].H.length},
+      'Ring'   :{L:sums['Ring'].L.length},
+      'D.End'  :{H:sums['D.End'].H.length, L:sums['D.End'].L.length},
+    };
+
+    // Also compute pause averages
+    const pauses=[];
+    for(let si=1;si<sets.length;si++){
+      const prevEnd=sets[si-1].endIdx;
+      const curStart=sets[si].startIdx;
+      if(curStart>prevEnd+1){
+        let pd=0;
+        for(let k=prevEnd+1;k<curStart;k++) pd+=segs[k].dur;
+        pauses.push(pd);
+      }
+    }
+    const pauseAvg=avgOrNA(pauses);
+    const pauseN=pauses.length;
+
+    const groupColors={'D.Start':CH_COLORS[2]||'#f59e0b', 'Ring':CH_COLORS[3]||'#a78bfa', 'D.End':CH_COLORS[0]||'#60a5fa', 'Pause':'var(--muted)'};
+    const SUM_TH=g=>`padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.1em;
+       border:1px solid var(--border);text-align:center;
+       color:${groupColors[g]};background:${groupColors[g]}18;
+       font-family:JetBrains Mono,monospace;`;
+    const SUB_TH=`padding:3px 10px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+       border:1px solid var(--border);text-align:center;color:var(--muted);background:var(--surface);`;
+    const SUM_TD=v=>`padding:4px 12px;font-size:10px;border:1px solid var(--border);text-align:right;
+       color:${v==='NA'?'var(--muted)':'var(--text)'};font-family:JetBrains Mono,monospace;`;
+    const N_TD=`padding:2px 12px;font-size:9px;border:1px solid var(--border);text-align:right;
+       color:var(--muted);background:var(--bg);font-family:JetBrains Mono,monospace;`;
+
+    html+=`<div class="summary-block" style="margin-top:8px;padding-top:6px;">
+      <div style="font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;
+        padding:0 0 4px 4px;">Average Duration by Group (µs)</div>
+      <div style="overflow-x:auto;"><table style="border-collapse:collapse;">
+        <tbody>
+          <tr>
+            <td colspan="2" style="${SUM_TH('D.Start')}">D.Start</td>
+            <td style="${SUM_TH('Ring')}">Ring</td>
+            <td colspan="2" style="${SUM_TH('D.End')}">D.End</td>
+            ${pauseN?`<td style="${SUM_TH('Pause')}">Pause</td>`:''}
+          </tr>
+          <tr>
+            <td style="${SUB_TH}min-width:70px;">LOW</td>
+            <td style="${SUB_TH}min-width:70px;">HIGH</td>
+            <td style="${SUB_TH}min-width:70px;">LOW</td>
+            <td style="${SUB_TH}min-width:70px;">HIGH</td>
+            <td style="${SUB_TH}min-width:70px;">LOW</td>
+            ${pauseN?`<td style="${SUB_TH}min-width:70px;">—</td>`:''}
+          </tr>
+          <tr>
+            <td style="${N_TD}">n=${gN['D.Start'].L}</td>
+            <td style="${N_TD}">n=${gN['D.Start'].H}</td>
+            <td style="${N_TD}">n=${gN['Ring'].L}</td>
+            <td style="${N_TD}">n=${gN['D.End'].H}</td>
+            <td style="${N_TD}">n=${gN['D.End'].L}</td>
+            ${pauseN?`<td style="${N_TD}">n=${pauseN}</td>`:''}
+          </tr>
+          <tr>
+            <td style="${SUM_TD(gAvg['D.Start'].L)}">${gAvg['D.Start'].L}</td>
+            <td style="${SUM_TD(gAvg['D.Start'].H)}">${gAvg['D.Start'].H}</td>
+            <td style="${SUM_TD(gAvg['Ring'].L)}">${gAvg['Ring'].L}</td>
+            <td style="${SUM_TD(gAvg['D.End'].H)}">${gAvg['D.End'].H}</td>
+            <td style="${SUM_TD(gAvg['D.End'].L)}">${gAvg['D.End'].L}</td>
+            ${pauseN?`<td style="${SUM_TD(pauseAvg)}">${pauseAvg}</td>`:''}
+          </tr>
+        </tbody>
+      </table></div>
+    </div>`;
+
+    html+=`</div>`;
+  });
+
+  wrap.innerHTML=html;
+}
+
 // ── GPIO threshold input → live refresh pulse table ──
 ['gpio-bl-min','gpio-bl-typ','gpio-bl-max',
  'gpio-lo0-min','gpio-lo0-typ','gpio-lo0-max',
@@ -3462,6 +3782,12 @@ function drawDurationChart(){
   $(id)?.addEventListener('input',()=>{
     if(schmittResult.length) drawDurationChart();
   });
+});
+
+// ── Analysis mode selector → live refresh ──
+$('analysis-mode')?.addEventListener('change',function(){
+  analysisMode=this.value;
+  if(schmittResult.length){ drawDurationChart(); drawSchmitt(); }
 });
 
 // ── ELMOS E524.xx protocol: IC timing profiles + per-IC command tables ──
