@@ -1448,10 +1448,10 @@ function classifyDetectionSets(segs){
     segGroup[i]  ={label:'D.Start',color:CH_COLORS[2]};
     segGroup[i+1]={label:'D.Start',color:CH_COLORS[2]};
     segGroup[i+2]={label:'Ring',   color:CH_COLORS[3]};
-    segGroup[i+3]={label:'—',      color:'var(--muted)'};
-    segGroup[i+4]={label:'—',      color:'var(--muted)'};
-    segGroup[i+5]={label:'—',      color:'var(--muted)'};
-    segGroup[i+6]={label:'—',      color:'var(--muted)'};
+    segGroup[i+3]={label:'Echo',    color:CH_COLORS[1]||'#34d399'};
+    segGroup[i+4]={label:'Echo',    color:CH_COLORS[1]||'#34d399'};
+    segGroup[i+5]={label:'Echo',    color:CH_COLORS[1]||'#34d399'};
+    segGroup[i+6]={label:'Echo',    color:CH_COLORS[1]||'#34d399'};
     segGroup[i+7]={label:'D.End',  color:CH_COLORS[0]||'#60a5fa'};
     segGroup[i+8]={label:'D.End',  color:CH_COLORS[0]||'#60a5fa'};
     for(let j=i;j<=i+DET_SEG_COUNT-1;j++) setIndex[j]=si;
@@ -3674,12 +3674,14 @@ function drawDetectionDurationChart(wrap,activeChs){
     html+=`</tbody></table></div>`;
 
     // ── Summary table: average per detection group ──
-    const sums={'D.Start':{L:[],H:[]}, 'Ring':{L:[]}, 'D.End':{H:[],L:[]}};
+    const sums={'D.Start':{L:[],H:[]}, 'Ring':{L:[]}, 'Echo':{H:[],L:[]}, 'D.End':{H:[],L:[]}};
     sets.forEach(set=>{
       const s=set.startIdx;
       sums['D.Start'].L.push(segs[s].dur);
       sums['D.Start'].H.push(segs[s+1].dur);
       sums['Ring'].L.push(segs[s+2].dur);
+      sums['Echo'].H.push(segs[s+3].dur);
+      sums['Echo'].L.push(segs[s+4].dur);
       sums['D.End'].H.push(segs[s+7].dur);
       sums['D.End'].L.push(segs[s+8].dur);
     });
@@ -3687,11 +3689,13 @@ function drawDetectionDurationChart(wrap,activeChs){
     const gAvg={
       'D.Start':{L:avgOrNA(sums['D.Start'].L), H:avgOrNA(sums['D.Start'].H)},
       'Ring'   :{L:avgOrNA(sums['Ring'].L)},
+      'Echo'   :{H:avgOrNA(sums['Echo'].H), L:avgOrNA(sums['Echo'].L)},
       'D.End'  :{H:avgOrNA(sums['D.End'].H), L:avgOrNA(sums['D.End'].L)},
     };
     const gN={
       'D.Start':{L:sums['D.Start'].L.length, H:sums['D.Start'].H.length},
       'Ring'   :{L:sums['Ring'].L.length},
+      'Echo'   :{H:sums['Echo'].H.length, L:sums['Echo'].L.length},
       'D.End'  :{H:sums['D.End'].H.length, L:sums['D.End'].L.length},
     };
 
@@ -3699,7 +3703,7 @@ function drawDetectionDurationChart(wrap,activeChs){
     const pauseAvg=avgOrNA(pauseDurs);
     const pauseN=pauseDurs.length;
 
-    const groupColors={'D.Start':CH_COLORS[2]||'#f59e0b', 'Ring':CH_COLORS[3]||'#a78bfa', 'D.End':CH_COLORS[0]||'#60a5fa', 'Pause':'var(--muted)'};
+    const groupColors={'D.Start':CH_COLORS[2]||'#f59e0b', 'Ring':CH_COLORS[3]||'#a78bfa', 'Echo':CH_COLORS[1]||'#34d399', 'D.End':CH_COLORS[0]||'#60a5fa', 'Pause':'var(--muted)'};
     const SUM_TH=g=>`padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.1em;
        border:1px solid var(--border);text-align:center;
        color:${groupColors[g]};background:${groupColors[g]}18;
@@ -3719,10 +3723,13 @@ function drawDetectionDurationChart(wrap,activeChs){
           <tr>
             <td colspan="2" style="${SUM_TH('D.Start')}">D.Start</td>
             <td style="${SUM_TH('Ring')}">Ring</td>
+            <td colspan="2" style="${SUM_TH('Echo')}">Echo</td>
             <td colspan="2" style="${SUM_TH('D.End')}">D.End</td>
             ${pauseN?`<td style="${SUM_TH('Pause')}">Pause</td>`:''}
           </tr>
           <tr>
+            <td style="${SUB_TH}min-width:70px;">LOW</td>
+            <td style="${SUB_TH}min-width:70px;">HIGH</td>
             <td style="${SUB_TH}min-width:70px;">LOW</td>
             <td style="${SUB_TH}min-width:70px;">HIGH</td>
             <td style="${SUB_TH}min-width:70px;">LOW</td>
@@ -3734,6 +3741,8 @@ function drawDetectionDurationChart(wrap,activeChs){
             <td style="${N_TD}">n=${gN['D.Start'].L}</td>
             <td style="${N_TD}">n=${gN['D.Start'].H}</td>
             <td style="${N_TD}">n=${gN['Ring'].L}</td>
+            <td style="${N_TD}">n=${gN['Echo'].H}</td>
+            <td style="${N_TD}">n=${gN['Echo'].L}</td>
             <td style="${N_TD}">n=${gN['D.End'].H}</td>
             <td style="${N_TD}">n=${gN['D.End'].L}</td>
             ${pauseN?`<td style="${N_TD}">n=${pauseN}</td>`:''}
@@ -3742,6 +3751,8 @@ function drawDetectionDurationChart(wrap,activeChs){
             <td style="${SUM_TD(gAvg['D.Start'].L)}">${gAvg['D.Start'].L}</td>
             <td style="${SUM_TD(gAvg['D.Start'].H)}">${gAvg['D.Start'].H}</td>
             <td style="${SUM_TD(gAvg['Ring'].L)}">${gAvg['Ring'].L}</td>
+            <td style="${SUM_TD(gAvg['Echo'].H)}">${gAvg['Echo'].H}</td>
+            <td style="${SUM_TD(gAvg['Echo'].L)}">${gAvg['Echo'].L}</td>
             <td style="${SUM_TD(gAvg['D.End'].H)}">${gAvg['D.End'].H}</td>
             <td style="${SUM_TD(gAvg['D.End'].L)}">${gAvg['D.End'].L}</td>
             ${pauseN?`<td style="${SUM_TD(pauseAvg)}">${pauseAvg}</td>`:''}
