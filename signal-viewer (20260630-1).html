@@ -1412,46 +1412,50 @@ function buildSegmentGroups(segs,thr){
 }
 
 // ── Detection Mode: pattern classifier ──
-// Pattern: L~100µs, H~100µs, L~800-1600µs, H~13ms, L~100µs, H~50µs, L~100µs
-// Wide absolute ranges for real-world tolerance on short pulses
+// Real 9-segment pattern from data:
+//   L~100µs, H~100µs, L~0.8-1.6ms, H~1-2ms, L~100-600µs, H~5-20ms, L~100µs, H~50µs, L~100µs
+// Groups: D.Start(0-1), Ring(2), —(3-4), —(5), D.End(6-7-8... wait user said D.End = H50+L100 = segs 7-8)
+const DET_SEG_COUNT = 9;
 const DET_RANGES = {
-  0: [30, 300],    // L ~100µs  (D.Start)
-  1: [30, 300],    // H ~100µs  (D.Start)
-  2: [800, 1600],  // L ring time (explicit)
-  3: [5000,20000], // H ~13ms
-  4: [30, 300],    // L ~100µs
-  5: [15, 200],    // H ~50µs   (D.End)
-  6: [30, 300],    // L ~100µs  (D.End)
+  0: [30, 300],     // L ~100µs  (D.Start)
+  1: [30, 300],     // H ~100µs  (D.Start)
+  2: [800, 2000],   // L ring time
+  3: [500, 3000],   // H echo/response ~1.5ms
+  4: [30, 600],     // L ~240µs
+  5: [3000,25000],  // H ~13ms listen window
+  6: [30, 300],     // L ~100µs
+  7: [15, 200],     // H ~50µs   (D.End)
+  8: [30, 300],     // L ~100µs  (D.End)
 };
-const DET_NOM = [100, 100, null, 13000, 100, 50, 100];
+const DET_STATES = ['L','H','L','H','L','H','L','H','L'];
 
 function classifyDetectionSets(segs){
   const sets=[];
   const segGroup=new Array(segs.length).fill(null);
   const setIndex=new Array(segs.length).fill(-1);
 
-  for(let i=0;i<=segs.length-7;i++){
-    if(segs[i].state!=='L'||segs[i+1].state!=='H'||segs[i+2].state!=='L'||
-       segs[i+3].state!=='H'||segs[i+4].state!=='L'||segs[i+5].state!=='H'||
-       segs[i+6].state!=='L') continue;
+  for(let i=0;i<=segs.length-DET_SEG_COUNT;i++){
     let ok=true;
-    for(let k=0;k<7;k++){
+    for(let k=0;k<DET_SEG_COUNT;k++){
+      if(segs[i+k].state!==DET_STATES[k]){ok=false;break;}
       const v=toUs(segs[i+k].dur);
       if(v<DET_RANGES[k][0]||v>DET_RANGES[k][1]){ok=false;break;}
     }
     if(!ok) continue;
 
     const si=sets.length;
-    sets.push({startIdx:i, endIdx:i+6});
+    sets.push({startIdx:i, endIdx:i+DET_SEG_COUNT-1});
     segGroup[i]  ={label:'D.Start',color:CH_COLORS[2]};
     segGroup[i+1]={label:'D.Start',color:CH_COLORS[2]};
     segGroup[i+2]={label:'Ring',   color:CH_COLORS[3]};
     segGroup[i+3]={label:'—',      color:'var(--muted)'};
     segGroup[i+4]={label:'—',      color:'var(--muted)'};
-    segGroup[i+5]={label:'D.End',  color:CH_COLORS[0]||'#60a5fa'};
-    segGroup[i+6]={label:'D.End',  color:CH_COLORS[0]||'#60a5fa'};
-    for(let j=i;j<=i+6;j++) setIndex[j]=si;
-    i+=6;
+    segGroup[i+5]={label:'—',      color:'var(--muted)'};
+    segGroup[i+6]={label:'—',      color:'var(--muted)'};
+    segGroup[i+7]={label:'D.End',  color:CH_COLORS[0]||'#60a5fa'};
+    segGroup[i+8]={label:'D.End',  color:CH_COLORS[0]||'#60a5fa'};
+    for(let j=i;j<=i+DET_SEG_COUNT-1;j++) setIndex[j]=si;
+    i+=DET_SEG_COUNT-1;
   }
   return {sets,segGroup,setIndex};
 }
@@ -3676,8 +3680,8 @@ function drawDetectionDurationChart(wrap,activeChs){
       sums['D.Start'].L.push(segs[s].dur);
       sums['D.Start'].H.push(segs[s+1].dur);
       sums['Ring'].L.push(segs[s+2].dur);
-      sums['D.End'].H.push(segs[s+5].dur);
-      sums['D.End'].L.push(segs[s+6].dur);
+      sums['D.End'].H.push(segs[s+7].dur);
+      sums['D.End'].L.push(segs[s+8].dur);
     });
     const avgOrNA=arr=>arr&&arr.length?toUs(arr.reduce((a,v)=>a+v,0)/arr.length).toFixed(1):'NA';
     const gAvg={
