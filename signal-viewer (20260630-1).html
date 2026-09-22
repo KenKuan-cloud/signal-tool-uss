@@ -3632,6 +3632,15 @@ function drawDetectionDurationChart(wrap,activeChs){
           font-family:JetBrains Mono,monospace;letter-spacing:.06em;">Ring</td>`;
         continue;
       }
+      if(lbl==='Echo'){
+        let span=1;
+        while(i+span<segs.length&&segGroup[i+span]?.label==='Echo') span++;
+        html+=`<td colspan="${span}" style="padding:3px 10px;font-size:11px;font-weight:700;
+          border:1px solid var(--border);text-align:center;
+          color:${g.color};background:${g.color}18;
+          font-family:JetBrains Mono,monospace;letter-spacing:.06em;">Echo</td>`;
+        i+=span-1; continue;
+      }
       html+=`<td style="${TD('var(--border)','','center')}font-size:9px;">—</td>`;
     }
     html+=`<td colspan="3" style="${TD('var(--muted)','','center')}font-size:9px;"></td></tr>`;
@@ -3675,33 +3684,41 @@ function drawDetectionDurationChart(wrap,activeChs){
     html+=`</tbody></table></div>`;
 
     // ── Summary table: average per detection group ──
-    const sums={'D.Start':{L:[],H:[]}, 'Ring':{L:[]}, 'Echo':{H:[],L:[]}, 'D.End':{H:[],L:[]}};
+    const sums={'D.Start':{L:[],H:[]}, 'Ring':{L:[]}, 'Echo':{L:[]}, 'D.End':{H:[],L:[]}, 'Dist':[]};
     sets.forEach(set=>{
       const s=set.startIdx, e=set.endIdx;
       sums['D.Start'].L.push(segs[s].dur);
       sums['D.Start'].H.push(segs[s+1].dur);
       sums['Ring'].L.push(segs[s+2].dur);
+      let echoLsum=0, echoHsum=0;
       for(let j=s+3;j<e-1;j++){
         if(segGroup[j]&&segGroup[j].label==='Echo'){
-          if(segs[j].state==='H') sums['Echo'].H.push(segs[j].dur);
-          else sums['Echo'].L.push(segs[j].dur);
+          if(segs[j].state==='H') echoHsum+=segs[j].dur;
+          else echoLsum+=segs[j].dur;
         }
       }
+      sums['Echo'].L.push(echoLsum);
+      // Distance = (D.Start H + Ring L + Echo H total) * 343 / 20  (time in ms → cm)
+      const tofSec=segs[s+1].dur+segs[s+2].dur+echoHsum;
+      sums['Dist'].push(toUs(tofSec)/1000*343/20);
       sums['D.End'].H.push(segs[e-1].dur);
       sums['D.End'].L.push(segs[e].dur);
     });
     const avgOrNA=arr=>arr&&arr.length?toUs(arr.reduce((a,v)=>a+v,0)/arr.length).toFixed(1):'NA';
+    const avgOrNAraw=arr=>arr&&arr.length?(arr.reduce((a,v)=>a+v,0)/arr.length).toFixed(1):'NA';
     const gAvg={
       'D.Start':{L:avgOrNA(sums['D.Start'].L), H:avgOrNA(sums['D.Start'].H)},
       'Ring'   :{L:avgOrNA(sums['Ring'].L)},
-      'Echo'   :{H:avgOrNA(sums['Echo'].H), L:avgOrNA(sums['Echo'].L)},
+      'Echo'   :{L:avgOrNA(sums['Echo'].L)},
       'D.End'  :{H:avgOrNA(sums['D.End'].H), L:avgOrNA(sums['D.End'].L)},
+      'Dist'   :avgOrNAraw(sums['Dist']),
     };
     const gN={
       'D.Start':{L:sums['D.Start'].L.length, H:sums['D.Start'].H.length},
       'Ring'   :{L:sums['Ring'].L.length},
-      'Echo'   :{H:sums['Echo'].H.length, L:sums['Echo'].L.length},
+      'Echo'   :{L:sums['Echo'].L.length},
       'D.End'  :{H:sums['D.End'].H.length, L:sums['D.End'].L.length},
+      'Dist'   :sums['Dist'].length,
     };
 
     const pauseDurs=pauseInfos.map(p=>p.dur);
@@ -3728,38 +3745,39 @@ function drawDetectionDurationChart(wrap,activeChs){
           <tr>
             <td colspan="2" style="${SUM_TH('D.Start')}">D.Start</td>
             <td style="${SUM_TH('Ring')}">Ring</td>
-            <td colspan="2" style="${SUM_TH('Echo')}">Echo</td>
+            <td style="${SUM_TH('Echo')}">Echo</td>
             <td colspan="2" style="${SUM_TH('D.End')}">D.End</td>
+            <td style="${SUM_TH('Echo')}">Distance</td>
             ${pauseN?`<td style="${SUM_TH('Pause')}">Pause</td>`:''}
           </tr>
           <tr>
             <td style="${SUB_TH}min-width:70px;">LOW</td>
             <td style="${SUB_TH}min-width:70px;">HIGH</td>
             <td style="${SUB_TH}min-width:70px;">LOW</td>
-            <td style="${SUB_TH}min-width:70px;">HIGH</td>
             <td style="${SUB_TH}min-width:70px;">LOW</td>
             <td style="${SUB_TH}min-width:70px;">HIGH</td>
             <td style="${SUB_TH}min-width:70px;">LOW</td>
+            <td style="${SUB_TH}min-width:70px;">cm</td>
             ${pauseN?`<td style="${SUB_TH}min-width:70px;">—</td>`:''}
           </tr>
           <tr>
             <td style="${N_TD}">n=${gN['D.Start'].L}</td>
             <td style="${N_TD}">n=${gN['D.Start'].H}</td>
             <td style="${N_TD}">n=${gN['Ring'].L}</td>
-            <td style="${N_TD}">n=${gN['Echo'].H}</td>
             <td style="${N_TD}">n=${gN['Echo'].L}</td>
             <td style="${N_TD}">n=${gN['D.End'].H}</td>
             <td style="${N_TD}">n=${gN['D.End'].L}</td>
+            <td style="${N_TD}">n=${gN['Dist']}</td>
             ${pauseN?`<td style="${N_TD}">n=${pauseN}</td>`:''}
           </tr>
           <tr>
             <td style="${SUM_TD(gAvg['D.Start'].L)}">${gAvg['D.Start'].L}</td>
             <td style="${SUM_TD(gAvg['D.Start'].H)}">${gAvg['D.Start'].H}</td>
             <td style="${SUM_TD(gAvg['Ring'].L)}">${gAvg['Ring'].L}</td>
-            <td style="${SUM_TD(gAvg['Echo'].H)}">${gAvg['Echo'].H}</td>
             <td style="${SUM_TD(gAvg['Echo'].L)}">${gAvg['Echo'].L}</td>
             <td style="${SUM_TD(gAvg['D.End'].H)}">${gAvg['D.End'].H}</td>
             <td style="${SUM_TD(gAvg['D.End'].L)}">${gAvg['D.End'].L}</td>
+            <td style="${SUM_TD(gAvg['Dist'])}">${gAvg['Dist']}</td>
             ${pauseN?`<td style="${SUM_TD(pauseAvg)}">${pauseAvg}</td>`:''}
           </tr>
         </tbody>
