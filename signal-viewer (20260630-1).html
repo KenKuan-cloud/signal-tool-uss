@@ -1,0 +1,4047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal Viewer</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=Syne:wght@400;700;800&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b0e14; --surface:#12161f; --border:#1e2535;
+  --text:#c8d0e0; --muted:#4a5568;
+  --ch1:#00e5ff; --ch2:#ff4f7b; --ch3:#ffe066; --ch4:#69ff9a;
+  --canvas-bg:#0b0e14; --canvas-grid:#1a2030; --canvas-axis:#4a5568;
+  --canvas-border:#1e2535; --canvas-label:#fff;
+}
+html.light{
+  --bg:#f4f5f7; --surface:#ffffff; --border:#d1d5db;
+  --text:#1f2937; --muted:#6b7280;
+  --ch1:#0891b2; --ch2:#e11d48; --ch3:#ca8a04; --ch4:#16a34a;
+  --canvas-bg:#ffffff; --canvas-grid:#e5e7eb; --canvas-axis:#6b7280;
+  --canvas-border:#d1d5db; --canvas-label:#111827;
+}
+html.light .hbtn:hover{color:#fff;}
+html,body{height:100%;background:var(--bg);color:var(--text);
+  font-family:'JetBrains Mono',monospace;overflow:hidden;display:flex;flex-direction:column;}
+
+header{display:flex;align-items:center;gap:14px;padding:9px 18px;
+  border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;}
+.logo{font-family:'Syne',sans-serif;font-weight:800;font-size:17px;color:var(--canvas-label);white-space:nowrap;}
+.logo span{color:var(--ch1);}
+#meta-strip{display:flex;gap:14px;font-size:10px;color:var(--muted);flex-wrap:wrap;}
+#meta-strip b{color:var(--text);}
+.hbtn{background:transparent;border:1px solid var(--ch1);color:var(--ch1);
+  font-family:inherit;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  padding:5px 14px;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s;}
+.hbtn:hover{background:var(--ch1);color:var(--bg);}
+#file-input{display:none;}
+
+/* tab strip */
+#tab-strip{display:none;align-items:center;gap:0;padding:0 18px;
+  border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;
+  overflow-x:auto;overflow-y:hidden;white-space:nowrap;min-height:30px;}
+#tab-strip.show{display:flex;}
+#tab-strip::-webkit-scrollbar{height:5px;}
+#tab-strip::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.tab{display:inline-flex;align-items:center;gap:8px;padding:7px 8px 7px 12px;
+  border-right:1px solid var(--border);cursor:pointer;font-size:11px;
+  color:var(--muted);max-width:240px;flex-shrink:0;
+  transition:background .12s,color .12s;}
+.tab:hover{color:var(--text);background:var(--bg);}
+.tab.active{color:var(--ch1);background:var(--bg);
+  box-shadow:inset 0 -2px 0 var(--ch1);}
+.tab .tab-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tab .tab-close{display:inline-flex;align-items:center;justify-content:center;
+  width:16px;height:16px;border-radius:2px;font-size:11px;color:var(--muted);
+  opacity:.6;transition:opacity .12s,background .12s;}
+.tab:hover .tab-close{opacity:1;}
+.tab .tab-close:hover{background:var(--border);color:var(--text);}
+.tab-newbtn{display:inline-flex;align-items:center;justify-content:center;
+  padding:5px 10px;margin-left:6px;cursor:pointer;color:var(--muted);
+  font-size:14px;line-height:1;border-radius:2px;flex-shrink:0;
+  transition:background .12s,color .12s;}
+.tab-newbtn:hover{background:var(--bg);color:var(--ch1);}
+
+#channel-bar{display:flex;align-items:center;gap:8px;padding:6px 18px;
+  border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;}
+.ch-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-right:4px;}
+.ch-tog{display:flex;align-items:center;gap:6px;padding:3px 11px;border-radius:2px;
+  border:1px solid transparent;cursor:pointer;font-family:inherit;font-size:11px;
+  font-weight:600;background:transparent;transition:opacity .15s;user-select:none;}
+.ch-tog .dot{width:8px;height:8px;border-radius:50%;}
+.ch-tog.on{opacity:1;}.ch-tog.off{opacity:.3;}
+
+/* main scroll area */
+#main{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+
+/* drop */
+#drop-zone{flex:1;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:14px;border:1px dashed var(--border);margin:32px;
+  border-radius:4px;cursor:pointer;transition:border-color .2s;}
+#drop-zone.over{border-color:var(--ch1);}
+#drop-zone svg{opacity:.2;}
+.dt{font-family:'Syne',sans-serif;font-size:20px;font-weight:700;color:var(--canvas-label);opacity:.45;}
+.ds{font-size:11px;color:var(--muted);}
+
+/* loading */
+#loading{display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:16px;}
+#loading.show{display:flex;}
+.spin{width:36px;height:36px;border:2px solid var(--border);
+  border-top-color:var(--ch1);border-radius:50%;animation:sp .7s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg);}}
+.lmsg{font-size:11px;color:var(--muted);letter-spacing:.08em;}
+
+/* app */
+#app{flex:1;display:none;flex-direction:column;overflow:hidden;}
+#app.show{display:flex;}
+
+/* chunks row */
+#chunks-bar{flex-shrink:0;padding:8px 18px 0;
+  border-bottom:1px solid var(--border);}
+.bar-title{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;}
+#chunks-scroll{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;}
+#chunks-scroll::-webkit-scrollbar{height:4px;}
+#chunks-scroll::-webkit-scrollbar-track{background:var(--bg);}
+#chunks-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+
+.card{flex-shrink:0;width:200px;border:1px solid var(--border);border-radius:3px;
+  cursor:pointer;background:var(--surface);overflow:hidden;transition:border-color .15s;}
+.card:hover{border-color:var(--muted);}
+.card.active{border-color:var(--ch1);}
+.card-top{padding:4px 8px;font-size:9px;color:var(--muted);
+  display:flex;justify-content:space-between;border-bottom:1px solid var(--border);}
+.card-top b{color:var(--text);}
+.card-canvas-wrap{height:60px;background:var(--bg);}
+.card-canvas-wrap canvas{display:block;}
+.card-bot{padding:2px 8px;font-size:9px;color:var(--muted);text-align:center;}
+
+/* expanded + detail area — scrollable */
+#lower{flex:1;overflow-y:auto;padding:10px 18px 16px;display:flex;flex-direction:column;gap:10px;}
+
+/* expanded panel */
+#expanded-panel{display:none;flex-direction:column;gap:6px;}
+#expanded-panel.show{display:flex;}
+.panel-hdr{display:flex;align-items:center;gap:10px;}
+.panel-title{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
+.panel-hint{font-size:9px;color:var(--muted);opacity:.6;}
+.pbtn{background:transparent;border:1px solid var(--border);color:var(--text);
+  font-family:inherit;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 10px;cursor:pointer;white-space:nowrap;transition:border-color .15s,color .15s;}
+.pbtn:hover,.pbtn.primary:hover{border-color:var(--ch1);color:var(--ch1);}
+.pbtn.primary{border-color:var(--ch1);color:var(--ch1);}
+.pbtn.primary:hover{background:var(--ch1);color:var(--bg);}
+.pbtn:disabled{opacity:.3;cursor:default;pointer-events:none;}
+#expanded-canvas-wrap{position:relative;background:var(--bg);border:1px solid var(--border);border-radius:2px;min-height:180px;}
+#expanded-canvas{display:block;}
+#sel-canvas{position:absolute;top:0;left:0;pointer-events:none;}
+#ab-info{font-size:10px;color:var(--muted);padding:2px 0;}
+#ab-info b{color:var(--text);}
+
+/* detail panel */
+#detail-panel{display:none;flex-direction:column;gap:6px;}
+#detail-panel.show{display:flex;}
+.detail-hdr{display:flex;align-items:center;gap:10px;}
+#detail-title{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);flex:1;}
+#detail-canvas-wrap{background:var(--bg);border:1px solid var(--border);border-radius:2px;min-height:260px;}
+#detail-canvas{display:block;}
+#detail-status{font-size:10px;color:var(--muted);padding:2px 0;border-top:1px solid var(--border);margin-top:2px;}
+#detail-status b{color:var(--text);}
+
+/* ─── Compare mode ─── */
+#compare-view{display:none;flex:1;flex-direction:column;overflow:hidden;
+  background:var(--bg);}
+body.compare-active #compare-view{display:flex;}
+/* When in compare mode: hide single-file UI but keep #app present (offscreen)
+   so its canvas dimensions remain valid for snapshot rendering. */
+body.compare-active #channel-bar{display:none;}
+body.compare-active #main{position:absolute;left:-99999px;top:0;
+  width:100vw;height:auto;visibility:hidden;pointer-events:none;}
+body.compare-active #close-btn,
+body.compare-active #pdf-btn{display:none !important;}
+#compare-toolbar{display:flex;align-items:center;gap:14px;padding:6px 18px;
+  border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;
+  font-size:11px;color:var(--muted);}
+#compare-label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
+.cmp-link{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  user-select:none;font-size:11px;color:var(--muted);}
+.cmp-link input{cursor:pointer;}
+.cmp-pane{flex:1;display:flex;flex-direction:column;min-height:0;
+  border-bottom:1px solid var(--border);overflow:hidden;}
+.cmp-pane:last-child{border-bottom:none;}
+.cmp-pane-hdr{display:flex;align-items:center;gap:10px;padding:5px 18px;
+  background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;}
+.cmp-pane-name{font-size:11px;font-weight:600;color:var(--ch1);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:50%;}
+.cmp-pane-sub{font-size:9px;color:var(--muted);letter-spacing:.08em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cmp-pane-body{flex:1;overflow:auto;padding:8px 18px;display:flex;
+  flex-direction:column;gap:6px;min-height:0;}
+.cmp-canvas-wrap{background:var(--bg);border:1px solid var(--border);
+  border-radius:2px;position:relative;flex-shrink:0;}
+.cmp-canvas-wrap canvas{display:block;cursor:grab;}
+.cmp-canvas-wrap canvas:active{cursor:grabbing;}
+.cmp-empty-msg{font-size:10px;color:var(--muted);font-style:italic;
+  padding:20px;text-align:center;}
+.cmp-section-label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);padding:4px 0 2px;}
+.cmp-pane-hint{font-size:9px;color:var(--muted);opacity:.6;margin-left:auto;}
+
+/* tab-strip pill in-compare visual */
+.tab.in-compare{box-shadow:inset 0 -2px 0 var(--ch3);}
+.tab.in-compare.active{box-shadow:inset 0 -2px 0 var(--ch3),inset 0 0 0 1px var(--ch3);}
+
+/* picker overlay */
+#cmp-picker{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;
+  display:none;align-items:center;justify-content:center;}
+#cmp-picker.show{display:flex;}
+#cmp-picker-card{background:var(--surface);border:1px solid var(--border);
+  border-radius:4px;padding:18px;min-width:320px;max-width:480px;
+  display:flex;flex-direction:column;gap:12px;}
+#cmp-picker-title{font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);}
+#cmp-picker-list{display:flex;flex-direction:column;gap:6px;
+  max-height:50vh;overflow:auto;}
+.cmp-picker-row{display:flex;align-items:center;gap:10px;padding:8px 10px;
+  border:1px solid var(--border);border-radius:2px;cursor:pointer;
+  font-size:11px;color:var(--text);transition:border-color .12s;}
+.cmp-picker-row:hover{border-color:var(--ch1);}
+.cmp-picker-row.checked{border-color:var(--ch1);background:var(--bg);}
+.cmp-picker-row input{cursor:pointer;}
+.cmp-picker-row .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#cmp-picker-actions{display:flex;justify-content:flex-end;gap:8px;}
+.pbtn.primary{border-color:var(--ch1);color:var(--ch1);}
+.pbtn.primary:hover{background:var(--ch1);color:var(--bg);}
+.pbtn:disabled{opacity:.4;cursor:not-allowed;}
+
+/* GPIO threshold rows (parameter bar) */
+.gpio-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.gpio-row>span{color:var(--text);font-weight:600;font-size:10px;min-width:130px;}
+.gpio-row label{font-size:10px;color:var(--muted);}
+.gpio-row input{width:72px;margin-left:3px;background:var(--bg);
+  border:1px solid var(--border);color:var(--text);
+  font-family:inherit;font-size:10px;padding:2px 5px;}
+
+/* Schmitt threshold rows (per-channel low/high) */
+.schmitt-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.schmitt-row .ch-name{font-size:10px;font-weight:600;min-width:36px;}
+.schmitt-row label{font-size:10px;color:var(--muted);}
+.schmitt-row input{width:90px;margin-left:6px;background:var(--bg);
+  border:1px solid var(--border);color:var(--text);
+  font-family:inherit;font-size:10px;padding:2px 6px;}
+.schmitt-row .unit{font-size:9px;color:var(--muted);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">SIG<span>·</span>VIEW</div>
+  <div id="meta-strip"></div>
+  <button class="hbtn" id="pdf-btn" style="margin-left:auto;">PDF Report</button>
+  <button class="hbtn" id="theme-btn">☀ Light</button>
+  <button class="hbtn" id="compare-btn" style="display:none;">⇅ Compare</button>
+  <button class="hbtn" id="close-btn" style="display:none;">✕ Close File</button>
+  <button class="hbtn" id="open-btn">Open CSV</button>
+  <input type="file" id="file-input" accept=".csv,.txt">
+</header>
+
+<div id="tab-strip"></div>
+
+<div id="channel-bar">
+  <span class="ch-label">Channels</span>
+  <span id="toggles" style="display:flex;gap:8px;"></span>
+</div>
+
+<div id="main">
+  <div id="drop-zone">
+    <svg width="44" height="44" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+      <path stroke-linecap="round" stroke-linejoin="round"
+        d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+    </svg>
+    <div class="dt">Drop CSV here</div>
+    <div class="ds">Tektronix / Yokogawa DL350 .csv · up to 4 channels · large files split into 100K chunks</div>
+  </div>
+
+  <div id="loading">
+    <div class="spin"></div>
+    <div class="lmsg" id="lmsg">Reading…</div>
+  </div>
+
+  <div id="app">
+    <!-- Chunk cards -->
+    <div id="chunks-bar">
+      <div style="display:flex;align-items:center;gap:8px;padding-right:18px;">
+        <div class="bar-title" id="chunks-title" style="flex:1;">Chunks — click to expand</div>
+        <button class="pbtn" id="hide-chunks-btn" style="font-size:9px;padding:2px 8px;">Hide</button>
+      </div>
+      <div id="chunks-body">
+        <div id="chunks-scroll"></div>
+      </div>
+    </div>
+
+    <!-- Expanded + detail -->
+    <div id="lower">
+
+      <!-- Expanded view with A/B selection -->
+      <div id="expanded-panel">
+        <div class="panel-hdr">
+          <span class="panel-title" id="exp-title">Expanded</span>
+          <span class="panel-hint">Drag to set A / B range — plots automatically</span>
+          <div style="flex:1"></div>
+          <button class="pbtn" id="hide-rough-btn">Hide</button>
+          <button class="pbtn" id="merge-btn">⊕ Merge Chunk</button>
+          <button class="pbtn" id="cancel-merge-btn" style="display:none;border-color:var(--ch3);color:var(--ch3);">✕ Cancel Merge</button>
+          <button class="pbtn primary" id="plot-detail-btn">Plot Detail →</button>
+          <button class="pbtn" id="dl-chunk-btn">↓ Download Chunk</button>
+        </div>
+        <div id="expanded-body">
+          <div id="expanded-canvas-wrap">
+            <canvas id="expanded-canvas"></canvas>
+            <canvas id="sel-canvas"></canvas>
+          </div>
+          <div id="ab-info">Drag on the chart above to select a range</div>
+        </div>
+      </div>
+
+      <!-- Detail view -->
+      <div id="detail-panel">
+        <div class="detail-hdr">
+          <span id="detail-title">Detail</span>
+          <span style="font-size:9px;color:var(--muted);opacity:.6;">scroll=zoom · drag=pan · dbl-click=reset</span>
+          <div style="flex:1"></div>
+          <button class="pbtn" id="measure-btn">Measure A/B</button>
+          <button class="pbtn primary" id="calc-btn" disabled>Calculate →</button>
+          <button class="pbtn" id="reset-zoom-btn">Reset Zoom</button>
+          <button class="pbtn" id="dl-detail-btn">↓ Download Range</button>
+        </div>
+        <div id="detail-canvas-wrap" style="position:relative;">
+          <canvas id="detail-canvas"></canvas>
+          <canvas id="measure-canvas" style="position:absolute;top:0;left:0;pointer-events:none;"></canvas>
+        </div>
+        <div id="detail-status"></div>
+        <div id="measure-bar" style="display:none;padding:6px 0;border-top:1px solid var(--border);margin-top:4px;font-size:10px;color:var(--muted);">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span id="measure-info">Drag on the chart to place measure markers</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Schmitt Trigger Analysis -->
+      <div id="schmitt-panel" style="display:none;flex-direction:column;gap:8px;padding-top:4px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);">Schmitt Trigger</span>
+          <span style="font-size:9px;color:var(--muted);opacity:.6;">between M-A and M-B</span>
+          <span style="font-size:9px;color:var(--muted);opacity:.6;">scroll=zoom · drag=pan · dbl-click=reset</span>
+          <div style="flex:1"></div>
+          <button class="pbtn" id="reset-schmitt-zoom-btn">Reset Zoom</button>
+          <button class="pbtn" id="dl-schmitt-btn">↓ Download CSV</button>
+        </div>
+        <!-- Per-channel threshold controls -->
+        <div id="schmitt-controls" style="display:flex;flex-direction:column;gap:6px;"></div>
+        <!-- Schmitt canvas -->
+        <div id="schmitt-canvas-wrap" style="background:var(--bg);border:1px solid var(--border);border-radius:2px;position:relative;">
+          <canvas id="schmitt-canvas" style="display:block;"></canvas>
+          <canvas id="schmitt-sel-canvas" style="position:absolute;top:0;left:0;pointer-events:none;"></canvas>
+        </div>
+        <div id="schmitt-sel-info" style="font-size:10px;color:var(--muted);padding:2px 0;">Click on the waveform to place A / B markers — snaps to transitions</div>
+        <!-- Stats table -->
+        <div id="schmitt-stats" style="font-size:10px;color:var(--muted);border-top:1px solid var(--border);padding-top:6px;"></div>
+        <!-- Duration table -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+          <span style="font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);">Pulse Duration Table</span>
+          <button class="pbtn" id="copy-table-btn" style="font-size:9px;padding:2px 8px;">⎘ Copy Table</button>
+        </div>
+
+        <!-- GPIO Parameter Thresholds -->
+        <div id="gpio-param-bar" style="display:none;flex-direction:column;gap:5px;padding:6px 4px;
+          border:1px solid var(--border);border-radius:2px;background:var(--bg);margin-bottom:2px;">
+
+          <!-- Protocol / command selector -->
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding-bottom:5px;
+            border-bottom:1px solid var(--border);margin-bottom:3px;">
+            <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);">
+              IC
+              <select id="proto-ic" style="font-size:10px;padding:2px 4px;background:var(--surface);
+                color:var(--text);border:1px solid var(--border);border-radius:2px;font-family:inherit;">
+                <option value="524.33">E524.33 — HV Direct Drive</option>
+                <option value="524.09">E524.09 — 2nd-gen Standard</option>
+                <option value="524.03">E524.03 — Standard (1st-gen)</option>
+                <option value="BD40011A">BD40011A</option>
+              </select>
+            </label>
+            <span id="proto-ic-badge" style="display:none;font-size:8px;letter-spacing:.05em;
+              text-transform:uppercase;color:var(--ch2);border:1px solid var(--ch2);
+              border-radius:2px;padding:1px 5px;">verify tolerances vs datasheet</span>
+            <label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);">
+              Analyzing
+              <select id="proto-cmd" style="font-size:10px;padding:2px 4px;background:var(--surface);
+                color:var(--text);border:1px solid var(--border);border-radius:2px;font-family:inherit;max-width:240px;">
+              </select>
+            </label>
+            <span id="proto-info" style="font-size:10px;color:var(--text);"></span>
+          </div>
+
+          <div style="font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding-bottom:2px;">
+            GPIO Timing Thresholds — ECU to Sensor Module (µs)</div>
+          <div class="gpio-row"><span>Bitlength</span>
+            <label>Min<input id="gpio-bl-min" type="number" step="any" value="131.3"></label>
+            <label>Typ<input id="gpio-bl-typ" type="number" step="any" value="150"></label>
+            <label>Max<input id="gpio-bl-max" type="number" step="any" value="166.2"></label>
+          </div>
+          <div class="gpio-row"><span>IO Low '0'</span>
+            <label>Min<input id="gpio-lo0-min" type="number" step="any" value="78.8"></label>
+            <label>Typ<input id="gpio-lo0-typ" type="number" step="any" value="100"></label>
+            <label>Max<input id="gpio-lo0-max" type="number" step="any" value="118.7"></label>
+          </div>
+          <div class="gpio-row"><span>IO Low '1'</span>
+            <label>Min<input id="gpio-hi1-min" type="number" step="any" value="21"></label>
+            <label>Typ<input id="gpio-hi1-typ" type="number" step="any" value="50"></label>
+            <label>Max<input id="gpio-hi1-max" type="number" step="any" value="71.2"></label>
+          </div>
+          <div class="gpio-row"><span>TCMD</span>
+            <label>Min<input id="gpio-tcmd-min" type="number" step="any" value="236.3"></label>
+            <label>Typ<input id="gpio-tcmd-typ" type="number" step="any" value="250"></label>
+            <label>Max<input id="gpio-tcmd-max" type="number" step="any" value="261.3"></label>
+          </div>
+          <div class="gpio-row"><span>TD</span>
+            <label>Min<input id="gpio-td-min" type="number" step="any" value="21"></label>
+            <label>Typ<input id="gpio-td-typ" type="number" step="any" value="50"></label>
+            <label>Max<input id="gpio-td-max" type="number" step="any" value="71.2"></label>
+          </div>
+        </div>
+
+        <div id="dur-chart-wrap" style="display:none;border:1px solid var(--border);border-radius:2px;overflow:hidden;"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- Compare view (shown only in compare mode) -->
+<div id="compare-view">
+  <div id="compare-toolbar">
+    <span id="compare-label">Compare</span>
+    <label class="cmp-link"><input type="checkbox" id="cmp-link"> Link time axes</label>
+    <button class="pbtn" id="cmp-swap-btn" title="Swap top/bottom">⇅ Swap</button>
+    <div style="flex:1;"></div>
+    <button class="pbtn" id="cmp-exit-btn">✕ Exit Compare</button>
+  </div>
+  <div id="cmp-pane-a" class="cmp-pane">
+    <div class="cmp-pane-hdr"><span class="cmp-pane-name" id="cmp-name-a"></span>
+      <span class="cmp-pane-sub" id="cmp-sub-a"></span></div>
+    <div class="cmp-pane-body" id="cmp-body-a"></div>
+  </div>
+  <div id="cmp-pane-b" class="cmp-pane">
+    <div class="cmp-pane-hdr"><span class="cmp-pane-name" id="cmp-name-b"></span>
+      <span class="cmp-pane-sub" id="cmp-sub-b"></span></div>
+    <div class="cmp-pane-body" id="cmp-body-b"></div>
+  </div>
+</div>
+
+<!-- Compare-pane picker (shown when 3+ tabs are open) -->
+<div id="cmp-picker">
+  <div id="cmp-picker-card">
+    <div id="cmp-picker-title">Choose 2 files to compare</div>
+    <div id="cmp-picker-list"></div>
+    <div id="cmp-picker-actions">
+      <button class="pbtn" id="cmp-picker-cancel">Cancel</button>
+      <button class="pbtn primary" id="cmp-picker-ok" disabled>Compare</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Constants ──
+// Theme-aware colors — read from CSS variables
+const CH_DARK  = ['#00e5ff','#ff4f7b','#ffe066','#69ff9a'];
+const CH_LIGHT = ['#0891b2','#e11d48','#ca8a04','#16a34a'];
+let CH_COLORS  = CH_DARK;
+let isDark = true;
+
+function themeColors(){
+  const s=getComputedStyle(document.documentElement);
+  return {
+    bg:       s.getPropertyValue('--canvas-bg').trim(),
+    grid:     s.getPropertyValue('--canvas-grid').trim(),
+    axis:     s.getPropertyValue('--canvas-axis').trim(),
+    border:   s.getPropertyValue('--canvas-border').trim(),
+    label:    s.getPropertyValue('--canvas-label').trim(),
+    text:     s.getPropertyValue('--text').trim(),
+    muted:    s.getPropertyValue('--muted').trim(),
+    selDim:   isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)',
+    selFill:  isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,100,200,0.08)',
+    measFill: isDark ? 'rgba(255,224,102,0.08)' : 'rgba(202,138,4,0.10)',
+    loBg:     isDark ? '#6b7a96' : '#9ca3af',
+  };
+}
+
+const CHUNK_ROWS     = 1000000;
+const PREVIEW_PTS    = 400;
+const EXPANDED_PTS   = 1500;
+const PAD = {l:44, r:12, t:10, b:28};
+
+// ── Utilities ──
+function sampleRows(rowStart, rowEnd, maxPts){
+  const rows=rowEnd-rowStart;
+  const step=Math.max(1,Math.floor(rows/maxPts));
+  const time=[],chs=Array.from({length:sigCount},()=>[]);
+  for(let li=0;li<rows;li+=step){
+    const ri=rowStart+li;
+    if(ri>=allLineOffsets.length) break;
+    const pos=allLineOffsets[ri];
+    const nl=fileText.indexOf('\n',pos);
+    parseLine(fileText,pos,nl===-1?fileText.length:nl,time,chs,ri);
+  }
+  return {time,chs};
+}
+
+function resetDetailState(){
+  detailData=null; zoomTMin=null; zoomTMax=null;
+  mA=null; mB=null; measureMode=false;
+  measureBtn.textContent='Measure A/B';
+  measureBtn.style.borderColor=''; measureBtn.style.color='';
+  measureBar.style.display='none';
+  detailCanvas.style.pointerEvents='auto';
+  measureCanvas.style.pointerEvents='none';
+  detailPanel.classList.remove('show');
+  schmittPanel.style.display='none';
+  $('gpio-param-bar').style.display='none';
+  $('dur-chart-wrap').style.display='none';
+  schmittResult=[];
+  schmittZoomTMin=null; schmittZoomTMax=null; schmittDragStart=null;
+}
+
+// ── Close current file: close the active tab. If others remain, switch to a neighbor;
+// otherwise return to the empty drop zone. ──
+function closeCurrentFile(){
+  // Don't allow close while a load is in progress
+  if(loading.classList.contains('show')) return;
+
+  const cur=currentSession();
+  if(!cur){
+    // No active session — nothing to close. Just make sure drop zone is showing.
+    setView('drop');
+    renderTabs();
+    return;
+  }
+
+  // Cancel any active modes (so they don't bleed into another tab)
+  cancelTransientModes();
+
+  // Remove the session
+  const idx=sessions.indexOf(cur);
+  sessions.splice(idx,1);
+
+  if(sessions.length===0){
+    // Last tab closed — clear globals back to empty defaults and show drop zone
+    currentSessionId=null;
+    clearGlobalsToEmpty();
+    metaStrip.innerHTML='';
+    toggles.innerHTML='';
+    chunksScroll.innerHTML='';
+    chunksTitle.textContent='Chunks — click to expand';
+    expPanel.classList.remove('show');
+    detailPanel.classList.remove('show');
+    schmittPanel.style.display='none';
+    $('gpio-param-bar').style.display='none';
+    $('dur-chart-wrap').style.display='none';
+    setView('drop');
+    renderTabs();
+    return;
+  }
+
+  // Switch to neighbor (left, or right if it was leftmost)
+  const next=sessions[Math.max(0,idx-1)] || sessions[0];
+  currentSessionId=next.id;
+  loadInto(next);
+  rebuildUIFromCurrent();
+  renderTabs();
+}
+
+// Reset transient interaction state. Used when leaving a tab so its half-finished
+// gestures (placing M-A/M-B, picking 2nd merge chunk) don't carry over.
+function cancelTransientModes(){
+  // Measure: if mid-placement, exit measure mode cleanly
+  if(measureMode){
+    measureMode=false;
+    measureBtn.textContent='Measure A/B';
+    measureBtn.style.borderColor=''; measureBtn.style.color='';
+    measureBar.style.display='none';
+    detailCanvas.style.pointerEvents='auto';
+    measureCanvas.style.pointerEvents='none';
+  }
+  // Merge: if waiting for 2nd chunk, exit merge mode
+  if(mergeMode){
+    mergeMode=false;
+    if(mergeBtn){ mergeBtn.style.display=''; }
+    if(cancelMergeBtn){ cancelMergeBtn.style.display='none'; }
+  }
+  // Drag states (always safe to clear)
+  dragMode=null; detailDragStart=null; measureDrag=null; schmittDragStart=null;
+}
+
+// Wipe globals back to first-load defaults (used when last tab closes)
+function clearGlobalsToEmpty(){
+  fileText=''; meta={}; sigNames=[]; sigCount=0; visible=[]; dataByteStart=0;
+  allLineOffsets=[]; totalRows=0; chunkBoundaries=[]; chunks=[];
+  globalYMin=Infinity; globalYMax=-Infinity;
+  activeChunk=-1; selA=null; selB=null;
+  detailData=null; zoomTMin=null; zoomTMax=null;
+  measureMode=false; mA=null; mB=null;
+  mergeMode=false; mergeChunkA=-1; mergeChunkB=-1; mergedExpData=null;
+  schmittResult=[]; schmittThresh=[]; schmittLayout=null;
+  sA=null; sB=null; schmittClickPhase=0;
+  schmittZoomTMin=null; schmittZoomTMax=null;
+}
+
+// Rebuild all UI from the current session globals. Called after switching tabs.
+// Assumes loadInto(s) has already run, so the globals reflect the target session.
+function rebuildUIFromCurrent(){
+  if(!sigNames.length){
+    // Empty session (shouldn't normally happen in switch, but be safe)
+    setView('drop');
+    return;
+  }
+  // Header / channel bar
+  buildMetaStrip();
+  buildToggles();
+  // Chunk cards
+  chunksTitle.textContent=`${chunks.length} chunk${chunks.length!==1?'s':''} × ${CHUNK_ROWS.toLocaleString()} rows — click to expand`;
+  renderCards();
+
+  // Expanded panel: show only if a chunk is expanded (or merged data exists)
+  const hasExp = (mergedExpData) || (activeChunk>=0 && chunks[activeChunk]?.expTime);
+  if(hasExp){
+    expPanel.classList.add('show');
+    if(mergedExpData){
+      const expTime=mergedExpData.expTime;
+      expTitle.textContent=`Chunk ${mergedExpData.chunkA+1} + ${mergedExpData.chunkB+1} (merged) — ${formatSI(expTime[0])} → ${formatSI(expTime[expTime.length-1])}${meta.xUnit||'s'}`;
+    } else {
+      expTitle.textContent=`Chunk ${activeChunk+1} — ${formatSI(chunks[activeChunk].tMin)} → ${formatSI(chunks[activeChunk].tMax)}${meta.xUnit||'s'}`;
+    }
+    if(selA!==null && selB!==null){
+      const dur=Math.abs(selB-selA);
+      abInfo.innerHTML=`<span style="color:var(--ch1)">A</span> <b>${formatSI(selA)}${meta.xUnit||'s'}</b> → <span style="color:var(--ch2)">B</span> <b>${formatSI(selB)}${meta.xUnit||'s'}</b> &nbsp;|&nbsp; Δ <b>${formatSI(dur)}${meta.xUnit||'s'}</b>`;
+    } else {
+      abInfo.textContent='Drag on the chart to select A → B range — plots automatically';
+    }
+    requestAnimationFrame(drawExpanded);
+  } else {
+    expPanel.classList.remove('show');
+  }
+
+  // Detail panel
+  if(detailData){
+    detailPanel.classList.add('show');
+    requestAnimationFrame(()=>{ drawDetail(); });
+  } else {
+    detailPanel.classList.remove('show');
+  }
+
+  // Schmitt panel
+  if(schmittResult.length){
+    schmittPanel.style.display='flex';
+    buildSchmittControls();
+    requestAnimationFrame(()=>{
+      drawSchmitt(); renderSchmittStats(); drawDurationChart();
+    });
+  } else {
+    schmittPanel.style.display='none';
+    $('gpio-param-bar').style.display='none';
+    $('dur-chart-wrap').style.display='none';
+  }
+
+  setView('app');
+}
+
+// Render the tab strip from the sessions array.
+function renderTabs(){
+  const strip=$('tab-strip');
+  strip.innerHTML='';
+  if(sessions.length===0){
+    strip.classList.remove('show');
+    // Compare button visibility
+    const cb=$('compare-btn'); if(cb) cb.style.display='none';
+    return;
+  }
+  strip.classList.add('show');
+  sessions.forEach(s=>{
+    const tab=document.createElement('div');
+    let cls='tab';
+    if(s.id===currentSessionId && !compareMode) cls+=' active';
+    if(compareMode && (s.id===compareSessionAId||s.id===compareSessionBId)) cls+=' in-compare';
+    tab.className=cls;
+    tab.title=s.name;
+    tab.innerHTML=`<span class="tab-name">${escapeHtml(s.name)}</span>
+      <span class="tab-close" title="Close">×</span>`;
+    tab.addEventListener('click',ev=>{
+      if(ev.target.classList.contains('tab-close')){
+        ev.stopPropagation();
+        closeSessionById(s.id);
+      } else {
+        // In compare mode, clicking any tab exits compare and switches to it
+        if(compareMode) exitCompare();
+        switchToSession(s.id);
+      }
+    });
+    strip.appendChild(tab);
+  });
+  // "+ New file" button at the end
+  const newBtn=document.createElement('div');
+  newBtn.className='tab-newbtn';
+  newBtn.textContent='+';
+  newBtn.title='Open another file';
+  newBtn.addEventListener('click',()=>fileInput.click());
+  strip.appendChild(newBtn);
+
+  // Compare button enabled iff 2+ sessions
+  const cb=$('compare-btn');
+  if(cb){
+    cb.style.display = (sessions.length>=2) ? '' : 'none';
+    cb.textContent = compareMode ? '✕ Exit Compare' : '⇅ Compare';
+  }
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+// Switch to an already-loaded session by id.
+function switchToSession(id){
+  if(id===currentSessionId) return;
+  // Block switches while a load is in progress (the in-flight load writes to globals)
+  if(loading.classList.contains('show')) return;
+  const target=sessions.find(s=>s.id===id);
+  if(!target) return;
+  // Cancel transient modes in the outgoing session, then save its state
+  cancelTransientModes();
+  const cur=currentSession();
+  if(cur) saveCurrent(cur);
+  // Switch
+  currentSessionId=target.id;
+  loadInto(target);
+  rebuildUIFromCurrent();
+  renderTabs();
+}
+
+// Close a session by id (used by × on inactive tabs and by closeCurrentFile on active).
+function closeSessionById(id){
+  if(id===currentSessionId){ closeCurrentFile(); return; }
+  // Block close-of-other-tab during a load (could leave globals inconsistent)
+  if(loading.classList.contains('show')) return;
+  // If the closed tab is one of the currently-compared ones, exit compare first.
+  if(compareMode && (id===compareSessionAId || id===compareSessionBId)){
+    exitCompare();
+  }
+  const idx=sessions.findIndex(s=>s.id===id);
+  if(idx<0) return;
+  sessions.splice(idx,1);
+  renderTabs();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// COMPARE MODE (Tier 3, δ-hybrid)
+// ─────────────────────────────────────────────────────────────────────────
+//
+// Compare mode shows two sessions side-by-side (stacked). It works by:
+// 1. Hiding the single-tab UI (#main is positioned offscreen, dims still valid)
+// 2. For each pane, swap-in that session's globals → run drawDetail() and
+//    drawSchmitt() into the original detailCanvas/schmittCanvas → snapshot
+//    the result via drawImage() to a per-pane canvas.
+// 3. Pane wheel/drag/dblclick events update that session's zoom state and
+//    re-render that pane (and the other pane if Link Time Axes is on).
+//
+// Compare mode is read-only for analysis: no measure markers, no Plot Detail,
+// no Schmitt re-calculation. To make changes, exit compare and switch tab.
+
+let compareMode = false;
+let compareSessionAId = null;
+let compareSessionBId = null;
+let compareLink = false;            // Link time axes toggle
+let comparePreviousSessionId = null; // Where to return on exit
+
+function enterCompare(idA, idB){
+  if(compareMode) return;
+  if(loading.classList.contains('show')) return;
+  if(!sessions.find(s=>s.id===idA) || !sessions.find(s=>s.id===idB)) return;
+
+  // Save the currently-active session so we can restore properly later
+  const cur=currentSession();
+  if(cur) saveCurrent(cur);
+  cancelTransientModes();
+
+  compareMode = true;
+  compareSessionAId = idA;
+  compareSessionBId = idB;
+  comparePreviousSessionId = currentSessionId;
+  // Detach the "current" session — globals are temporarily not bound to any
+  // session while in compare mode. renderComparePane manages its own swaps.
+  currentSessionId = null;
+  document.body.classList.add('compare-active');
+
+  // Build pane DOM (canvases of correct sizing happen in renderComparePane)
+  buildComparePanes();
+  renderTabs();
+  renderComparePane('a');
+  renderComparePane('b');
+}
+
+function exitCompare(){
+  if(!compareMode) return;
+  compareMode = false;
+  document.body.classList.remove('compare-active');
+
+  // Restore the session we came from (if it still exists)
+  let returnId = comparePreviousSessionId;
+  if(!sessions.find(s=>s.id===returnId)){
+    // Previous session was closed during compare — fall back to A or B if they still exist
+    returnId = sessions.find(s=>s.id===compareSessionAId)?.id
+            || sessions.find(s=>s.id===compareSessionBId)?.id
+            || (sessions[0] && sessions[0].id) || null;
+  }
+  compareSessionAId = compareSessionBId = comparePreviousSessionId = null;
+
+  if(returnId !== null && returnId !== currentSessionId){
+    // Save current globals (they may have been mid-rendered for a pane)
+    const cur=currentSession();
+    if(cur) saveCurrent(cur);
+    currentSessionId = returnId;
+    loadInto(currentSession());
+    rebuildUIFromCurrent();
+  } else if(returnId === currentSessionId){
+    // Same session — just rebuild the single-tab UI
+    rebuildUIFromCurrent();
+  } else {
+    // No sessions at all
+    setView('drop');
+  }
+  renderTabs();
+}
+
+// Build empty per-pane canvas wrappers; dimensions filled in by renderComparePane.
+function buildComparePanes(){
+  ['a','b'].forEach(p=>{
+    const body=$('cmp-body-'+p);
+    body.innerHTML='';
+    // Detail section
+    const detailLabel=document.createElement('div');
+    detailLabel.className='cmp-section-label';
+    detailLabel.textContent='Detail · scroll=zoom · drag=pan · dbl-click=reset';
+    body.appendChild(detailLabel);
+    const detailWrapEl=document.createElement('div');
+    detailWrapEl.className='cmp-canvas-wrap';
+    detailWrapEl.id='cmp-detail-wrap-'+p;
+    const detailCv=document.createElement('canvas');
+    detailCv.id='cmp-detail-'+p;
+    detailWrapEl.appendChild(detailCv);
+    body.appendChild(detailWrapEl);
+    // Schmitt section (added if session has schmittResult, otherwise hidden)
+    const schmittLabel=document.createElement('div');
+    schmittLabel.className='cmp-section-label';
+    schmittLabel.id='cmp-schmitt-label-'+p;
+    schmittLabel.textContent='Schmitt Trigger · scroll=zoom · drag=pan';
+    schmittLabel.style.display='none';
+    body.appendChild(schmittLabel);
+    const schmittWrapEl=document.createElement('div');
+    schmittWrapEl.className='cmp-canvas-wrap';
+    schmittWrapEl.id='cmp-schmitt-wrap-'+p;
+    schmittWrapEl.style.display='none';
+    const schmittCv=document.createElement('canvas');
+    schmittCv.id='cmp-schmitt-'+p;
+    schmittWrapEl.appendChild(schmittCv);
+    body.appendChild(schmittWrapEl);
+    // Empty message
+    const emptyMsg=document.createElement('div');
+    emptyMsg.className='cmp-empty-msg';
+    emptyMsg.id='cmp-empty-'+p;
+    emptyMsg.style.display='none';
+    body.appendChild(emptyMsg);
+
+    // Wire interaction for this pane's canvases
+    wirePaneInteraction(p, detailCv, 'detail');
+    wirePaneInteraction(p, schmittCv, 'schmitt');
+  });
+}
+
+// Render one pane by swapping in its session globals, calling the existing
+// drawDetail/drawSchmitt, then snapshotting the resulting canvas image into
+// the pane's visible canvas.
+function renderComparePane(p){
+  const id = (p==='a') ? compareSessionAId : compareSessionBId;
+  const s = sessions.find(x=>x.id===id);
+  if(!s) return;
+
+  // Pane filename + meta in the header
+  $('cmp-name-'+p).textContent = s.name;
+  $('cmp-name-'+p).title = s.name;
+  const subParts=[];
+  if(s.sigNames && s.sigNames.length) subParts.push(s.sigNames.join(' · '));
+  if(s.meta && s.meta.sampleInterval) subParts.push('Δt='+formatSI(parseFloat(s.meta.sampleInterval))+(s.meta.xUnit||'s'));
+  $('cmp-sub-'+p).textContent = subParts.join(' · ');
+
+  const detailCv = $('cmp-detail-'+p);
+  const detailWrapEl = $('cmp-detail-wrap-'+p);
+  const schmittCv = $('cmp-schmitt-'+p);
+  const schmittWrapEl = $('cmp-schmitt-wrap-'+p);
+  const schmittLabel = $('cmp-schmitt-label-'+p);
+  const emptyMsg = $('cmp-empty-'+p);
+
+  if(!s.detailData){
+    // No detail plotted in this session
+    detailWrapEl.style.display='none';
+    schmittWrapEl.style.display='none';
+    schmittLabel.style.display='none';
+    emptyMsg.style.display='';
+    emptyMsg.textContent='No detail plot in this tab. Switch to it (click the tab) and drag a range to plot.';
+    return;
+  }
+  detailWrapEl.style.display='';
+  emptyMsg.style.display='none';
+
+  // Save the currently-loaded session, swap to the pane's session
+  const prev = currentSession();
+  if(prev) saveCurrent(prev);
+  loadInto(s);
+
+  try {
+    // Force panels to be shown so their canvases have valid layout dimensions
+    // (#main is positioned offscreen but visibility:hidden preserves layout).
+    // Without this, panels left as display:none from a previous render would
+    // give offsetHeight=0 and the snapshot would be empty.
+    detailPanel.classList.add('show');
+    if(s.schmittResult && s.schmittResult.length){
+      schmittPanel.style.display='flex';
+    }
+
+    // Render detail: drawDetail() draws into the original detailCanvas at
+    // detailWrap's offsetWidth. Set detailWrap to the desired width before draw.
+    const W = detailWrapEl.clientWidth || 800;
+    detailWrap.style.width = W+'px';
+    detailWrap.style.minHeight='';
+    drawDetail();
+    // Now blit detailCanvas → pane's canvas at 1:1 logical px
+    const srcH = detailCanvas.offsetHeight;
+    const dpr = devicePixelRatio;
+    detailCv.style.width = W+'px';
+    detailCv.style.height = srcH+'px';
+    detailCv.width = W*dpr;
+    detailCv.height = srcH*dpr;
+    const dctx = detailCv.getContext('2d');
+    // detailCanvas is a hi-DPI canvas (W*dpr wide). Copy bitmap directly.
+    dctx.drawImage(detailCanvas, 0, 0, detailCanvas.width, detailCanvas.height,
+                                  0, 0, detailCv.width, detailCv.height);
+
+    // Render Schmitt if present
+    if(s.schmittResult && s.schmittResult.length){
+      schmittLabel.style.display='';
+      schmittWrapEl.style.display='';
+      schmittWrap.style.width = W+'px';
+      drawSchmitt();
+      const sH = schmittCanvas.offsetHeight;
+      schmittCv.style.width = W+'px';
+      schmittCv.style.height = sH+'px';
+      schmittCv.width = W*dpr;
+      schmittCv.height = sH*dpr;
+      const sctx = schmittCv.getContext('2d');
+      sctx.drawImage(schmittCanvas, 0, 0, schmittCanvas.width, schmittCanvas.height,
+                                     0, 0, schmittCv.width, schmittCv.height);
+    } else {
+      schmittLabel.style.display='none';
+      schmittWrapEl.style.display='none';
+    }
+  } finally {
+    // Save the (potentially mutated) globals back into this pane's session,
+    // then restore the previously-loaded session.
+    saveCurrent(s);
+    if(prev) loadInto(prev);
+    else clearGlobalsToEmpty();
+  }
+}
+
+// Wire wheel/drag/dblclick on a pane canvas. Modifies the pane's session
+// state (zoom window) and re-renders.
+function wirePaneInteraction(paneId, cv, kind){
+  // kind = 'detail' or 'schmitt'
+  let dragStart = null;
+
+  cv.addEventListener('wheel', e=>{
+    e.preventDefault();
+    const id = (paneId==='a') ? compareSessionAId : compareSessionBId;
+    const s = sessions.find(x=>x.id===id);
+    if(!s) return;
+    const rect = cv.getBoundingClientRect();
+    const factor = e.deltaY>0 ? 1.25 : 0.8;
+    if(kind==='detail'){
+      if(!s.detailData) return;
+      const cx = paneXtoTime(s, rect, e.clientX-rect.left, 'detail');
+      applyZoomDetail(s, cx, factor);
+    } else {
+      if(!s.schmittResult || !s.schmittResult.length) return;
+      const cx = paneXtoTime(s, rect, e.clientX-rect.left, 'schmitt');
+      if(cx===null) return;
+      applyZoomSchmitt(s, cx, factor);
+    }
+    rerenderAfterChange(paneId, kind);
+  }, {passive:false});
+
+  cv.addEventListener('mousedown', e=>{
+    if(e.button!==0) return;
+    const id = (paneId==='a') ? compareSessionAId : compareSessionBId;
+    const s = sessions.find(x=>x.id===id);
+    if(!s) return;
+    if(kind==='detail' && !s.detailData) return;
+    if(kind==='schmitt' && (!s.schmittResult || !s.schmittResult.length)) return;
+    const rect = cv.getBoundingClientRect();
+    dragStart = {
+      x: e.clientX - rect.left,
+      tMin: kind==='detail' ? s.zoomTMin : s.schmittZoomTMin,
+      tMax: kind==='detail' ? s.zoomTMax : s.schmittZoomTMax,
+      kind, sessionId: id
+    };
+    e.preventDefault();
+  });
+
+  // Use window-level mousemove/mouseup so dragging works even when the
+  // cursor leaves the canvas
+  window.addEventListener('mousemove', e=>{
+    if(!dragStart) return;
+    const id = dragStart.sessionId;
+    const s = sessions.find(x=>x.id===id);
+    if(!s) { dragStart=null; return; }
+    const rect = cv.getBoundingClientRect();
+    const dx = (e.clientX - rect.left) - dragStart.x;
+    const W = rect.width || 1;
+    const span = dragStart.tMax - dragStart.tMin;
+    const dt = dx / W * span;
+    if(dragStart.kind==='detail'){
+      applyPanDetail(s, dragStart.tMin - dt, dragStart.tMax - dt);
+    } else {
+      applyPanSchmitt(s, dragStart.tMin - dt, dragStart.tMax - dt);
+    }
+    rerenderAfterChange(paneId, dragStart.kind);
+  });
+  window.addEventListener('mouseup', ()=>{ dragStart=null; });
+
+  cv.addEventListener('dblclick', ()=>{
+    const id = (paneId==='a') ? compareSessionAId : compareSessionBId;
+    const s = sessions.find(x=>x.id===id);
+    if(!s) return;
+    if(kind==='detail' && s.detailData){
+      const wasSpan = (s.zoomTMax-s.zoomTMin);
+      s.zoomTMin = s.detailData.tA;
+      s.zoomTMax = s.detailData.tB;
+      const newSpan = s.zoomTMax - s.zoomTMin;
+      if(compareLink){
+        // Apply same span ratio to the other session
+        const other = otherSession(paneId);
+        if(other && other.detailData){
+          const oldOSpan = other.zoomTMax - other.zoomTMin;
+          // Reset other to its full range (consistent: dbl-click = reset both)
+          other.zoomTMin = other.detailData.tA;
+          other.zoomTMax = other.detailData.tB;
+        }
+      }
+    } else if(kind==='schmitt' && s.schmittResult.length){
+      s.schmittZoomTMin = null;
+      s.schmittZoomTMax = null;
+      if(compareLink){
+        const other = otherSession(paneId);
+        if(other && other.schmittResult && other.schmittResult.length){
+          other.schmittZoomTMin = null;
+          other.schmittZoomTMax = null;
+        }
+      }
+    }
+    rerenderAfterChange(paneId, kind);
+  });
+}
+
+function paneXtoTime(s, rect, px, kind){
+  const W = rect.width || 1;
+  const f = Math.max(0, Math.min(1, px / W));
+  if(kind==='detail'){
+    if(s.zoomTMin===null || s.zoomTMax===null) return null;
+    return s.zoomTMin + f * (s.zoomTMax - s.zoomTMin);
+  } else {
+    if(s.schmittZoomTMin===null || s.schmittZoomTMax===null) return null;
+    return s.schmittZoomTMin + f * (s.schmittZoomTMax - s.schmittZoomTMin);
+  }
+}
+
+function applyZoomDetail(s, cx, factor){
+  if(!s.detailData) return;
+  const fullSpan = s.detailData.tB - s.detailData.tA;
+  const curSpan = (s.zoomTMax - s.zoomTMin) || fullSpan;
+  const newSpan = Math.max(curSpan*factor, fullSpan*0.0001);
+  // Anchor on cursor if available, else midpoint
+  const anchor = (cx===null) ? (s.zoomTMin + curSpan/2) : cx;
+  const ratio = (anchor - s.zoomTMin) / (curSpan || 1);
+  let nMin = anchor - ratio*newSpan;
+  let nMax = nMin + newSpan;
+  if(nMin < s.detailData.tA){ nMin = s.detailData.tA; nMax = nMin + newSpan; }
+  if(nMax > s.detailData.tB){ nMax = s.detailData.tB; nMin = nMax - newSpan; }
+  s.zoomTMin = Math.max(nMin, s.detailData.tA);
+  s.zoomTMax = Math.min(nMax, s.detailData.tB);
+}
+
+function applyPanDetail(s, nMin, nMax){
+  if(!s.detailData) return;
+  const span = nMax - nMin;
+  if(nMin < s.detailData.tA){ nMin = s.detailData.tA; nMax = nMin + span; }
+  if(nMax > s.detailData.tB){ nMax = s.detailData.tB; nMin = nMax - span; }
+  s.zoomTMin = nMin;
+  s.zoomTMax = nMax;
+}
+
+function applyZoomSchmitt(s, cx, factor){
+  if(!s.detailData || !s.schmittResult.length) return;
+  // Schmitt's full range is mA..mB
+  const tFullMin = Math.min(s.mA, s.mB);
+  const tFullMax = Math.max(s.mA, s.mB);
+  const fullSpan = tFullMax - tFullMin;
+  const curMin = (s.schmittZoomTMin===null) ? tFullMin : s.schmittZoomTMin;
+  const curMax = (s.schmittZoomTMax===null) ? tFullMax : s.schmittZoomTMax;
+  const curSpan = curMax - curMin;
+  const newSpan = Math.max(curSpan*factor, fullSpan*0.0001);
+  const anchor = (cx===null) ? (curMin + curSpan/2) : cx;
+  const ratio = (anchor - curMin) / (curSpan || 1);
+  let nMin = anchor - ratio*newSpan;
+  let nMax = nMin + newSpan;
+  if(nMin < tFullMin){ nMin = tFullMin; nMax = nMin + newSpan; }
+  if(nMax > tFullMax){ nMax = tFullMax; nMin = nMax - newSpan; }
+  s.schmittZoomTMin = Math.max(nMin, tFullMin);
+  s.schmittZoomTMax = Math.min(nMax, tFullMax);
+}
+
+function applyPanSchmitt(s, nMin, nMax){
+  if(!s.detailData || !s.schmittResult.length) return;
+  const tFullMin = Math.min(s.mA, s.mB);
+  const tFullMax = Math.max(s.mA, s.mB);
+  const span = nMax - nMin;
+  if(nMin < tFullMin){ nMin = tFullMin; nMax = nMin + span; }
+  if(nMax > tFullMax){ nMax = tFullMax; nMin = nMax - span; }
+  s.schmittZoomTMin = nMin;
+  s.schmittZoomTMax = nMax;
+}
+
+function otherSession(paneId){
+  const otherId = (paneId==='a') ? compareSessionBId : compareSessionAId;
+  return sessions.find(x=>x.id===otherId);
+}
+
+// Re-render after a session's zoom state changed in compare mode.
+// If Link Time Axes is on, also propagate the *delta* of change to the other
+// session (relative time shift, not absolute window).
+function rerenderAfterChange(paneId, kind){
+  if(compareLink){
+    const thisId = (paneId==='a') ? compareSessionAId : compareSessionBId;
+    const thisS = sessions.find(x=>x.id===thisId);
+    const other = otherSession(paneId);
+    if(thisS && other){
+      // Sync the "relative position within the full range" of the changed
+      // session to the other session — same span fraction at same offset.
+      if(kind==='detail' && thisS.detailData && other.detailData){
+        const thisSpan = thisS.detailData.tB - thisS.detailData.tA;
+        const otherSpan = other.detailData.tB - other.detailData.tA;
+        if(thisSpan>0 && otherSpan>0){
+          const minF = (thisS.zoomTMin - thisS.detailData.tA) / thisSpan;
+          const maxF = (thisS.zoomTMax - thisS.detailData.tA) / thisSpan;
+          other.zoomTMin = other.detailData.tA + minF*otherSpan;
+          other.zoomTMax = other.detailData.tA + maxF*otherSpan;
+          // Clamp
+          other.zoomTMin = Math.max(other.zoomTMin, other.detailData.tA);
+          other.zoomTMax = Math.min(other.zoomTMax, other.detailData.tB);
+        }
+      } else if(kind==='schmitt' && thisS.schmittResult.length && other.schmittResult.length){
+        const tA1 = Math.min(thisS.mA, thisS.mB), tB1 = Math.max(thisS.mA, thisS.mB);
+        const tA2 = Math.min(other.mA, other.mB), tB2 = Math.max(other.mA, other.mB);
+        const span1 = tB1 - tA1, span2 = tB2 - tA2;
+        if(span1>0 && span2>0){
+          const cMin = (thisS.schmittZoomTMin===null) ? tA1 : thisS.schmittZoomTMin;
+          const cMax = (thisS.schmittZoomTMax===null) ? tB1 : thisS.schmittZoomTMax;
+          const minF = (cMin - tA1)/span1;
+          const maxF = (cMax - tA1)/span1;
+          other.schmittZoomTMin = tA2 + minF*span2;
+          other.schmittZoomTMax = tA2 + maxF*span2;
+          other.schmittZoomTMin = Math.max(other.schmittZoomTMin, tA2);
+          other.schmittZoomTMax = Math.min(other.schmittZoomTMax, tB2);
+        }
+      }
+    }
+    renderComparePane('a');
+    renderComparePane('b');
+  } else {
+    renderComparePane(paneId);
+  }
+}
+
+// ── Compare picker (when 3+ tabs are open) ──
+function showComparePicker(){
+  const list=$('cmp-picker-list');
+  list.innerHTML='';
+  const checked=new Set();
+  // Pre-check the two most recent (currentSessionId + most recent other)
+  if(currentSessionId) checked.add(currentSessionId);
+  for(let i=sessions.length-1;i>=0 && checked.size<2;i--){
+    if(!checked.has(sessions[i].id)) checked.add(sessions[i].id);
+  }
+  sessions.forEach(s=>{
+    const row=document.createElement('label');
+    row.className='cmp-picker-row'+(checked.has(s.id)?' checked':'');
+    row.innerHTML=`<input type="checkbox" ${checked.has(s.id)?'checked':''} data-id="${s.id}">
+      <span class="name">${escapeHtml(s.name)}</span>`;
+    const cb=row.querySelector('input');
+    cb.addEventListener('change',()=>{
+      if(cb.checked){
+        checked.add(s.id);
+        // Cap at 2 — uncheck the oldest one if we exceed
+        if(checked.size>2){
+          const arr=Array.from(checked);
+          const oldest=arr[0];
+          checked.delete(oldest);
+          const oldRow=list.querySelector(`input[data-id="${oldest}"]`);
+          if(oldRow){ oldRow.checked=false; oldRow.parentElement.classList.remove('checked'); }
+        }
+      } else {
+        checked.delete(s.id);
+      }
+      row.classList.toggle('checked', checked.has(s.id));
+      $('cmp-picker-ok').disabled = (checked.size!==2);
+    });
+    list.appendChild(row);
+  });
+  $('cmp-picker-ok').disabled = (checked.size!==2);
+  $('cmp-picker-ok').onclick = ()=>{
+    if(checked.size!==2) return;
+    const [a,b] = Array.from(checked);
+    $('cmp-picker').classList.remove('show');
+    enterCompare(a,b);
+  };
+  $('cmp-picker-cancel').onclick = ()=>{
+    $('cmp-picker').classList.remove('show');
+  };
+  $('cmp-picker').classList.add('show');
+}
+
+// Public entry from the Compare button
+function startCompare(){
+  if(compareMode){ exitCompare(); return; }
+  if(sessions.length<2) return;
+  if(sessions.length===2){
+    enterCompare(sessions[0].id, sessions[1].id);
+  } else {
+    showComparePicker();
+  }
+}
+
+// Re-render compare panes on window resize
+window.addEventListener('resize', ()=>{
+  if(compareMode){
+    renderComparePane('a');
+    renderComparePane('b');
+  }
+});
+
+function setupCanvas(canvas,W,H){
+  const dpr=devicePixelRatio;
+  canvas.width=W*dpr; canvas.height=H*dpr;
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  const ctx=canvas.getContext('2d');
+  ctx.scale(dpr,dpr);
+  return ctx;
+}
+
+// ── Shared A/B range-drag helper ──────────────────────────────────────────
+// Used by BOTH the chunk-expanded selection (selA/selB) and the detail
+// measure markers (mA/mB). The two interaction systems are identical in
+// behavior: click to start a new range, drag to grow it; click within
+// snapPx of an existing handle to drag that handle instead; if A and B
+// cross during the drag, swap them and flip the active handle.
+//
+// Caller supplies pxToTime/timeToPx for time-axis mapping, getA/setA/getB/setB
+// to read/write the marker state, and onChange for redraw + info-text update.
+// isActive() gates handling (e.g. measure mode toggle); when it returns false
+// no events are processed.
+function attachRangeDrag(opts){
+  const {
+    trigger,            // element receiving mousedown/touchstart
+    canvasForRect,      // element used for getBoundingClientRect (often = trigger)
+    isActive,           // () => bool
+    pxToTime,           // (px) => time
+    timeToPx,           // (t) => px
+    getA, setA, getB, setB,
+    getDragMode, setDragMode,
+    onChange,           // () => void; called after each state mutation (during drag)
+    onComplete,         // () => void; called once when the drag finishes (mouseup/touchend)
+    enableTouch=false,
+    snapPx=10,
+  } = opts;
+
+  const rect = ()=>canvasForRect.getBoundingClientRect();
+
+  trigger.addEventListener('mousedown', e=>{
+    if(!isActive()) return;
+    const r=rect();
+    const x=e.clientX-r.left;
+    const a=getA(), b=getB();
+    if(a!==null && Math.abs(x-timeToPx(a))<snapPx) setDragMode('a');
+    else if(b!==null && Math.abs(x-timeToPx(b))<snapPx) setDragMode('b');
+    else { setDragMode('new'); const t=pxToTime(x); setA(t); setB(t); }
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', e=>{
+    const dm=getDragMode();
+    if(!dm || !isActive()) return;
+    const r=rect();
+    const t=pxToTime(e.clientX-r.left);
+    if(dm==='a') setA(t);
+    else if(dm==='b') setB(t);
+    else setB(t);
+    let a=getA(), b=getB();
+    if(a>b){
+      setA(b); setB(a);
+      if(dm==='a') setDragMode('b');
+      else if(dm==='b') setDragMode('a');
+    }
+    onChange();
+  });
+
+  window.addEventListener('mouseup', ()=>{
+    if(getDragMode()){ setDragMode(null); onChange(); if(onComplete) onComplete(); }
+  });
+
+  if(enableTouch){
+    trigger.addEventListener('touchstart', e=>{
+      if(!isActive()) return;
+      const r=rect();
+      const x=e.touches[0].clientX-r.left;
+      const t=pxToTime(x);
+      setA(t); setB(t); setDragMode('new');
+      e.preventDefault();
+    },{passive:false});
+
+    window.addEventListener('touchmove', e=>{
+      if(!getDragMode() || !isActive()) return;
+      const r=rect();
+      const t=pxToTime(e.touches[0].clientX-r.left);
+      setB(t);
+      let a=getA(), b=getB();
+      if(a>b){ setA(b); setB(a); }
+      onChange();
+    });
+
+    window.addEventListener('touchend', ()=>{ if(getDragMode()){ setDragMode(null); if(onComplete) onComplete(); } });
+  }
+}
+
+
+// ── GPIO Protocol Helpers (shared by drawSchmitt + drawDurationChart) ──
+const toUs=s=>+(s*1e6).toFixed(4);
+const gpioInRange=(v,mn,mx)=>v>=mn&&v<=mx;
+
+function readGpioThresholds(){
+  return {
+    blMin:  parseFloat($('gpio-bl-min').value)  || 131.3,
+    blMax:  parseFloat($('gpio-bl-max').value)  || 166.2,
+    lo0Min: parseFloat($('gpio-lo0-min').value) || 78.8,
+    lo0Max: parseFloat($('gpio-lo0-max').value) || 118.7,
+    hi1Min: parseFloat($('gpio-hi1-min').value) || 21,
+    hi1Max: parseFloat($('gpio-hi1-max').value) || 71.2,
+    tcmdMin:parseFloat($('gpio-tcmd-min').value)|| 236.3,
+    tcmdMax:parseFloat($('gpio-tcmd-max').value)|| 261.3,
+    tdMin:  parseFloat($('gpio-td-min').value)  || 21,
+    tdMax:  parseFloat($('gpio-td-max').value)  || 71.2,
+  };
+}
+
+function classifyGpioPair(lowUs,highUs,thr){
+  const TOL=0.35;
+  const inR=(v,nom)=>Math.abs(v-nom)/nom<=TOL;
+  if(lowUs>=thr.tcmdMin&&lowUs<=thr.tcmdMax&&highUs>=thr.tdMin&&highUs<=thr.tdMax)
+    return {label:'TCMD',color:CH_COLORS[2]};
+  if(inR(lowUs,100)&&inR(highUs,50))  return {label:'0',color:isDark?'#6b7a96':'#9ca3af'};
+  if(inR(lowUs,50) &&inR(highUs,100)) return {label:'1',color:CH_COLORS[3]};
+  // Last-bit fallback: the trailing HIGH half of the final bit in a frame
+  // doesn't end with a clean falling edge — it just stays high through the
+  // idle delay until the next TCMD's LOW (or, with no following TCMD, runs
+  // to the end of the captured data). That merges the bit's standard HIGH
+  // width with extra delay, pushing it past the normal tolerance window
+  // above. As long as LOW alone matches a standard width and HIGH is at
+  // least that wide, classify it from LOW and report the remainder as
+  // delayUs rather than leaving it undetected as '?'.
+  if(inR(lowUs,100) && highUs>=50*(1-TOL))
+    return {label:'0',color:isDark?'#6b7a96':'#9ca3af',delayUs:Math.max(0,highUs-50)};
+  if(inR(lowUs,50) && highUs>=100*(1-TOL))
+    return {label:'1',color:CH_COLORS[3],delayUs:Math.max(0,highUs-100)};
+  return {label:'?',color:CH_COLORS[1]};
+}
+
+// Returns {segGroup[], afterTcmd[], pairSpan[]} for a segment array
+function buildSegmentGroups(segs,thr){
+  const segGroup=new Array(segs.length).fill(null);
+  const pairSpan=new Array(segs.length).fill(false);
+  for(let i=0;i<segs.length-1;i++){
+    if(segs[i].state==='L'&&segs[i+1].state==='H'){
+      const grp=classifyGpioPair(toUs(segs[i].dur),toUs(segs[i+1].dur),thr);
+      segGroup[i]=grp; segGroup[i+1]={...grp}; // both get same group
+      pairSpan[i+1]=true;
+    }
+  }
+  const afterTcmd=new Array(segs.length).fill(false);
+  let inFrame=false;
+  for(let i=0;i<segs.length;i++){
+    const lbl=segGroup[i]?.label||null;
+    if(lbl==='TCMD'&&segs[i].state==='L') inFrame=false;
+    else if(lbl==='TCMD'&&segs[i].state==='H') inFrame=true;
+    else if(inFrame) afterTcmd[i]=true;
+  }
+  return {segGroup,afterTcmd,pairSpan};
+}
+
+function redrawCanvases(){
+  chunks.forEach((_,ci)=>drawCard(ci));
+  if(activeChunk>=0&&chunks[activeChunk]?.expTime) drawExpanded();
+  if(detailData) drawDetail();
+  if(schmittResult.length){drawSchmitt();renderSchmittStats();drawDurationChart();}
+}
+
+function redrawAll(){ buildToggles(); redrawCanvases(); }
+
+// ── State ──
+let fileText='', meta={}, dataByteStart=0, sigNames=[], sigCount=0, visible=[];
+let allLineOffsets=[], totalRows=0;  // allLineOffsets[i] = byte offset of row i
+let chunkBoundaries=[];               // indices into allLineOffsets at chunk boundaries
+let chunks=[];           // {byteStart,byteEnd,rowStart,rowEnd,tMin,tMax,pTime[],pChs[][]}
+let globalYMin=Infinity, globalYMax=-Infinity;
+let activeChunk=-1;
+let selA=null, selB=null, dragMode=null;
+let detailData=null;     // {time[], chs[][]} for current detail
+let zoomTMin=null, zoomTMax=null;   // current zoom window (null = full range)
+let detailDragStart=null;           // for pan drag
+let measureMode=false;              // true = measure A/B active
+let mA=null, mB=null;               // measure marker times
+let measureDrag=null;               // 'a'|'b'|'new'
+
+// ── Merge state ──
+let mergeMode=false;                // true = waiting for user to pick 2nd chunk
+let mergeChunkA=-1;                 // 1st chunk index
+let mergeChunkB=-1;                 // 2nd chunk index
+let mergedExpData=null;             // {expTime[], expChs[][]} merged result
+
+// ── Schmitt state ──
+let schmittResult=[];               // per channel: [{state:'H'|'L', tStart, tEnd, dur}]
+let schmittThresh=[];               // per channel: {lo, hi, min, max}
+let schmittLayout=null;             // {tMin,tMax,W,H,PADs,ROW_H,AXIS_H}
+let sA=null, sB=null;               // selected times on schmitt plot
+let schmittClickPhase=0;            // 0=place A, 1=place B, 2=both placed
+let schmittZoomTMin=null, schmittZoomTMax=null; // current zoom window (null = full mA..mB range)
+let schmittDragStart=null;          // for pan drag {x, tMin, tMax, moved}
+
+// ── Multi-file session state ──
+// Each session holds a snapshot of all per-file state. The globals above always
+// reflect the currently active session — we save/load between session and globals
+// when switching tabs. Object/array fields are stored by reference so mutations
+// in the globals are visible in the session immediately; primitives are explicitly
+// copied on saveCurrent().
+let sessions = [];
+let currentSessionId = null;
+let _sessionIdSeq = 0;
+
+function makeSession(name){
+  return {
+    id: ++_sessionIdSeq,
+    name: name || 'Untitled',
+    // primitives + references; defaults match the initial-file state
+    fileText:'', meta:{}, sigNames:[], sigCount:0, visible:[],
+    dataByteStart:0,
+    allLineOffsets:[], totalRows:0, chunkBoundaries:[],
+    chunks:[],
+    globalYMin:Infinity, globalYMax:-Infinity,
+    activeChunk:-1, selA:null, selB:null,
+    detailData:null, zoomTMin:null, zoomTMax:null,
+    measureMode:false, mA:null, mB:null,
+    mergeMode:false, mergeChunkA:-1, mergeChunkB:-1, mergedExpData:null,
+    schmittResult:[], schmittThresh:[], schmittLayout:null,
+    sA:null, sB:null, schmittClickPhase:0,
+    schmittZoomTMin:null, schmittZoomTMax:null,
+  };
+}
+
+// Copy globals → session (called before switching away from a tab)
+function saveCurrent(s){
+  if(!s) return;
+  s.fileText=fileText; s.meta=meta; s.sigNames=sigNames; s.sigCount=sigCount;
+  s.visible=visible; s.dataByteStart=dataByteStart;
+  s.allLineOffsets=allLineOffsets; s.totalRows=totalRows;
+  s.chunkBoundaries=chunkBoundaries; s.chunks=chunks;
+  s.globalYMin=globalYMin; s.globalYMax=globalYMax;
+  s.activeChunk=activeChunk; s.selA=selA; s.selB=selB;
+  s.detailData=detailData; s.zoomTMin=zoomTMin; s.zoomTMax=zoomTMax;
+  s.measureMode=measureMode; s.mA=mA; s.mB=mB;
+  s.mergeMode=mergeMode; s.mergeChunkA=mergeChunkA; s.mergeChunkB=mergeChunkB;
+  s.mergedExpData=mergedExpData;
+  s.schmittResult=schmittResult; s.schmittThresh=schmittThresh; s.schmittLayout=schmittLayout;
+  s.sA=sA; s.sB=sB; s.schmittClickPhase=schmittClickPhase;
+  s.schmittZoomTMin=schmittZoomTMin; s.schmittZoomTMax=schmittZoomTMax;
+}
+
+// Copy session → globals (called when switching to a tab)
+function loadInto(s){
+  if(!s) return;
+  fileText=s.fileText; meta=s.meta; sigNames=s.sigNames; sigCount=s.sigCount;
+  visible=s.visible; dataByteStart=s.dataByteStart;
+  allLineOffsets=s.allLineOffsets; totalRows=s.totalRows;
+  chunkBoundaries=s.chunkBoundaries; chunks=s.chunks;
+  globalYMin=s.globalYMin; globalYMax=s.globalYMax;
+  activeChunk=s.activeChunk; selA=s.selA; selB=s.selB;
+  detailData=s.detailData; zoomTMin=s.zoomTMin; zoomTMax=s.zoomTMax;
+  measureMode=s.measureMode; mA=s.mA; mB=s.mB;
+  mergeMode=s.mergeMode; mergeChunkA=s.mergeChunkA; mergeChunkB=s.mergeChunkB;
+  mergedExpData=s.mergedExpData;
+  schmittResult=s.schmittResult; schmittThresh=s.schmittThresh; schmittLayout=s.schmittLayout;
+  sA=s.sA; sB=s.sB; schmittClickPhase=s.schmittClickPhase;
+  schmittZoomTMin=s.schmittZoomTMin; schmittZoomTMax=s.schmittZoomTMax;
+}
+
+function currentSession(){
+  return sessions.find(s=>s.id===currentSessionId) || null;
+}
+
+// ── DOM ──
+const $=id=>document.getElementById(id);
+const openBtn=$('open-btn'), fileInput=$('file-input'), dropZone=$('drop-zone');
+const loading=$('loading'), lmsg=$('lmsg'), app=$('app');
+const chunksScroll=$('chunks-scroll'), chunksTitle=$('chunks-title');
+const hideChunksBtn=$('hide-chunks-btn');
+
+// Shared hide/show toggle for collapsible panels. Reused by hideChunksBtn + hideRoughBtn.
+function bindHideToggle(btn, body){
+  btn.addEventListener('click',()=>{
+    const hidden=body.style.display==='none';
+    body.style.display=hidden?'':'none';
+    btn.textContent=hidden?'Hide':'Show';
+    btn.style.borderColor=hidden?'':'var(--ch1)';
+    btn.style.color=hidden?'':'var(--ch1)';
+  });
+}
+bindHideToggle(hideChunksBtn, $('chunks-body'));
+const metaStrip=$('meta-strip'), toggles=$('toggles');
+const expPanel=$('expanded-panel'), expTitle=$('exp-title'), abInfo=$('ab-info');
+const expWrap=$('expanded-canvas-wrap'), expBody=$('expanded-body');
+const expCanvas=$('expanded-canvas'), selCanvas=$('sel-canvas');
+const plotDetailBtn=$('plot-detail-btn'), dlChunkBtn=$('dl-chunk-btn');
+const hideRoughBtn=$('hide-rough-btn');
+bindHideToggle(hideRoughBtn, expBody);
+const detailPanel=$('detail-panel'), detailTitle=$('detail-title');
+const detailWrap=$('detail-canvas-wrap'), detailCanvas=$('detail-canvas');
+const measureCanvas=$('measure-canvas');
+const detailStatus=$('detail-status'), dlDetailBtn=$('dl-detail-btn'), resetZoomBtn=$('reset-zoom-btn');
+const measureBtn=$('measure-btn'), measureBar=$('measure-bar'), measureInfo=$('measure-info');
+const calcBtn=$('calc-btn');
+const schmittPanel=$('schmitt-panel');
+
+// ── Theme toggle ──
+const themeBtn=$('theme-btn');
+themeBtn.addEventListener('click',()=>{
+  isDark=!isDark;
+  document.documentElement.classList.toggle('light',!isDark);
+  CH_COLORS=isDark?CH_DARK:CH_LIGHT;
+  themeBtn.textContent=isDark?'☀ Light':'☾ Dark';
+  redrawAll();
+});
+
+// ── PDF Report ──
+const pdfBtn=$('pdf-btn');
+pdfBtn.addEventListener('click',()=>generatePDF());
+
+function generatePDF(){
+  // Title page info
+  const info={
+    model: meta.model||'Unknown',
+    date: meta._date||'',
+    time: meta._time||'',
+    channels: sigNames.join(', '),
+    sampleInterval: meta.sampleInterval ? formatSI(parseFloat(meta.sampleInterval))+(meta.xUnit||'s') : '?',
+    fs: meta.sampleInterval ? formatSI(1/parseFloat(meta.sampleInterval))+'Hz' : '?',
+    totalRows: totalRows.toLocaleString(),
+    chunks: chunks.length,
+    units: (meta._yUnits||[meta.yUnit||'V']).join(', '),
+  };
+
+  // ── Capture waveform images in FORCED LIGHT MODE ──
+  // Report document still follows the user's current theme, but the embedded
+  // canvas images are always light for readability when printed.
+  const userWasDark=isDark;
+  let expImg=null, detImg=null, schmittImgLight=null;
+  if(userWasDark){
+    isDark=false;
+    document.documentElement.classList.add('light');
+    CH_COLORS=CH_LIGHT;
+    redrawAll();
+  }
+  try{
+    if(expCanvas.width>0 && expPanel.classList.contains('show')){
+      expImg=expCanvas.toDataURL('image/png');
+    }
+    if(detailCanvas.width>0 && detailPanel.classList.contains('show')){
+      detImg=detailCanvas.toDataURL('image/png');
+    }
+    if(schmittResult.length && schmittPanel.style.display!=='none' &&
+       schmittCanvas && schmittCanvas.width>0){
+      schmittImgLight=schmittCanvas.toDataURL('image/png');
+    }
+  } finally {
+    // Restore the user's theme before continuing
+    if(userWasDark){
+      isDark=true;
+      document.documentElement.classList.remove('light');
+      CH_COLORS=CH_DARK;
+      redrawAll();
+    }
+  }
+
+  // Build PDF in a new window
+  const win=window.open('','_blank');
+  if(!win){alert('Please allow popups for PDF export.');return;}
+
+  const bgCol=isDark?'#0b0e14':'#ffffff';
+  const fgCol=isDark?'#c8d0e0':'#1f2937';
+  const mutCol=isDark?'#4a5568':'#6b7280';
+  const borderCol=isDark?'#1e2535':'#d1d5db';
+  const accentCol=isDark?'#00e5ff':'#0891b2';
+
+  let html=`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Signal Report</title>
+<style>
+@media print{@page{margin:12mm 10mm;size:A4 landscape;}}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:${bgCol};color:${fgCol};padding:20px;font-size:11px;}
+h1{font-size:18px;font-weight:700;color:${accentCol};margin-bottom:4px;}
+h2{font-size:13px;font-weight:600;color:${fgCol};margin:16px 0 6px;border-bottom:1px solid ${borderCol};padding-bottom:3px;}
+.meta-table{width:100%;border-collapse:collapse;margin-bottom:12px;}
+.meta-table td{padding:3px 10px;border:1px solid ${borderCol};font-size:10px;}
+.meta-table td:first-child{font-weight:600;color:${mutCol};width:140px;}
+.meta-table td:last-child{color:${fgCol};}
+.img-wrap{margin:8px 0;text-align:center;}
+.img-wrap img{max-width:100%;border:1px solid ${borderCol};border-radius:3px;}
+.caption{font-size:9px;color:${mutCol};text-align:center;margin-top:2px;}
+.footer{margin-top:20px;font-size:8px;color:${mutCol};text-align:center;border-top:1px solid ${borderCol};padding-top:6px;}
+.detail-stats{margin:6px 0;font-size:10px;}
+.detail-stats span{margin-right:14px;}
+/* Report-scoped theming so data tables copied from the app render correctly here */
+.report-data{
+  --bg:${bgCol};
+  --surface:${isDark?'#111827':'#f9fafb'};
+  --text:${fgCol};
+  --muted:${mutCol};
+  --border:${borderCol};
+  color:${fgCol};
+  font-size:10px;
+}
+.report-data table{border-collapse:collapse;}
+.report-data input{background:${isDark?'#111827':'#f9fafb'};border:1px solid ${borderCol};
+  color:${fgCol};font-family:inherit;padding:2px 5px;}
+.report-data .pbtn,.report-data button{display:none;} /* hide interactive controls */
+.threshold-block{border:1px solid ${borderCol};border-radius:3px;padding:8px 10px;margin:6px 0;
+  background:${isDark?'#0f1320':'#fafbfc'};}
+.threshold-block .row{display:flex;gap:14px;flex-wrap:wrap;margin:3px 0;font-size:10px;}
+.threshold-block .label{font-weight:600;min-width:110px;color:${fgCol};}
+.threshold-block .val{color:${mutCol};}
+@media print{
+  .report-data table{page-break-inside:auto;}
+  .report-data tr{page-break-inside:avoid;}
+  h2{page-break-after:avoid;}
+}
+</style></head><body>`;
+
+  html+=`<h1>Signal Analysis Report</h1>`;
+  html+=`<p style="color:${mutCol};font-size:10px;margin-bottom:12px;">Generated ${new Date().toLocaleString()}</p>`;
+
+  // Meta table
+  html+=`<h2>File Information</h2>`;
+  html+=`<table class="meta-table">`;
+  html+=`<tr><td>Model</td><td>${info.model}</td></tr>`;
+  if(info.date) html+=`<tr><td>Capture Date</td><td>${info.date} ${info.time}</td></tr>`;
+  html+=`<tr><td>Channels</td><td>${info.channels}</td></tr>`;
+  html+=`<tr><td>Units</td><td>${info.units}</td></tr>`;
+  html+=`<tr><td>Sample Interval</td><td>${info.sampleInterval}</td></tr>`;
+  html+=`<tr><td>Sample Rate</td><td>${info.fs}</td></tr>`;
+  html+=`<tr><td>Total Rows</td><td>${info.totalRows}</td></tr>`;
+  html+=`<tr><td>Chunks</td><td>${info.chunks}</td></tr>`;
+  html+=`</table>`;
+
+  // Expanded view
+  if(expImg){
+    const expSrc=mergedExpData||(chunks[activeChunk]?.expTime?chunks[activeChunk]:null);
+    const tRange=expSrc?`${formatSI(expSrc.expTime[0])}${meta.xUnit||'s'} → ${formatSI(expSrc.expTime[expSrc.expTime.length-1])}${meta.xUnit||'s'}`:'';
+    html+=`<h2>Expanded View${mergedExpData?' (Merged)':activeChunk>=0?' — Chunk '+(activeChunk+1):''}</h2>`;
+    if(tRange) html+=`<p style="font-size:10px;color:${mutCol};margin-bottom:4px;">Time range: ${tRange}</p>`;
+    html+=`<div class="img-wrap"><img src="${expImg}"></div>`;
+    if(selA!==null&&selB!==null){
+      html+=`<p class="caption">Selection: A = ${formatSI(selA)}${meta.xUnit||'s'} → B = ${formatSI(selB)}${meta.xUnit||'s'} | Δ = ${formatSI(selB-selA)}${meta.xUnit||'s'}</p>`;
+    }
+  }
+
+  // Detail view
+  if(detImg && detailData){
+    html+=`<h2>Detail View</h2>`;
+    const {time:dTime,chs:dChs,tA,tB}=detailData;
+    html+=`<p style="font-size:10px;color:${mutCol};margin-bottom:4px;">Range: ${formatSI(zoomTMin)}${meta.xUnit||'s'} → ${formatSI(zoomTMax)}${meta.xUnit||'s'} | ${dTime.length.toLocaleString()} points</p>`;
+    html+=`<div class="img-wrap"><img src="${detImg}"></div>`;
+
+    // Stats per channel
+    html+=`<div class="detail-stats">`;
+    dChs.forEach((ch,i)=>{
+      if(!visible[i]) return;
+      let mn=Infinity,mx=-Infinity,sum=0,cnt=0;
+      ch.forEach(v=>{if(!isNaN(v)){if(v<mn)mn=v;if(v>mx)mx=v;sum+=v;cnt++;}});
+      if(cnt){
+        const u=(meta._yUnits&&meta._yUnits[i])?meta._yUnits[i]:(meta.yUnit||'V');
+        const avg=(sum/cnt).toPrecision(4);
+        html+=`<span style="color:${CH_COLORS[i]};font-weight:600;">${sigNames[i]}: ${mn.toPrecision(4)} … ${mx.toPrecision(4)} ${u} (avg ${avg} ${u})</span>`;
+      }
+    });
+    html+=`</div>`;
+
+    // Measure info
+    if(measureMode && mA!==null && mB!==null){
+      html+=`<p style="font-size:10px;margin-top:4px;">Measure: M-A = ${formatSI(mA)}${meta.xUnit||'s'} → M-B = ${formatSI(mB)}${meta.xUnit||'s'} | Δ = ${formatSI(mB-mA)}${meta.xUnit||'s'}</p>`;
+    }
+  }
+
+  // Schmitt analysis if visible
+  if(schmittResult.length&&schmittPanel.style.display!=='none'){
+    if(schmittImgLight){
+      html+=`<h2>Schmitt Trigger Analysis</h2>`;
+      html+=`<div class="img-wrap"><img src="${schmittImgLight}"></div>`;
+    }
+
+    // Per-channel Schmitt thresholds (low/high) used for the decoding
+    if(schmittThresh.length){
+      html+=`<h2>Schmitt Thresholds</h2>`;
+      html+=`<div class="threshold-block">`;
+      schmittThresh.forEach((th,ci)=>{
+        if(!visible[ci]) return;
+        const u=(meta._yUnits&&meta._yUnits[ci])?meta._yUnits[ci]:(meta.yUnit||'V');
+        html+=`<div class="row">
+          <span class="label" style="color:${CH_COLORS[ci]};">${sigNames[ci]}</span>
+          <span class="val">Low: <b style="color:${fgCol};">${th.lo} ${u}</b></span>
+          <span class="val">High: <b style="color:${fgCol};">${th.hi} ${u}</b></span>
+          <span class="val">Signal range: ${th.min.toPrecision(4)} … ${th.max.toPrecision(4)} ${u}</span>
+        </div>`;
+      });
+      html+=`</div>`;
+    }
+
+    // Pulse duration SUMMARY only — one compact table per channel.
+    // We clone the rendered summary block from each channel in #dur-chart-wrap
+    // so formatting, colors, and n-counts stay consistent with the on-screen view.
+    const durChart=$('dur-chart-wrap');
+    if(durChart&&durChart.style.display!=='none'){
+      const channelBlocks=durChart.querySelectorAll('.channel-block');
+      const summaryParts=[];
+      channelBlocks.forEach(block=>{
+        const heading=block.querySelector('.channel-heading');
+        const summary=block.querySelector('.summary-block');
+        if(heading && summary){
+          summaryParts.push(
+            `<div style="margin-bottom:10px;">`+
+              heading.outerHTML+
+              summary.outerHTML+
+            `</div>`
+          );
+        }
+      });
+      if(summaryParts.length){
+        html+=`<h2>Pulse Duration Summary</h2>`;
+        html+=`<div class="report-data">${summaryParts.join('')}</div>`;
+      }
+    }
+  }
+
+  html+=`<div class="footer">Generated by SIG·VIEW — Signal Viewer & Analyzer</div>`;
+  html+=`</body></html>`;
+
+  win.document.write(html);
+  win.document.close();
+  // Auto-trigger print dialog after images load
+  setTimeout(()=>{win.print();},500);
+}
+
+// ── File open ──
+openBtn.addEventListener('click',()=>fileInput.click());
+dropZone.addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',e=>{if(e.target.files[0])startLoad(e.target.files[0]);fileInput.value='';});
+dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('over');});
+dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('over'));
+dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('over');if(e.dataTransfer.files[0])startLoad(e.dataTransfer.files[0]);});
+
+// Page-wide drag-drop: accept files dropped anywhere (not just the drop zone),
+// so a second file can be dragged in while a file is already loaded.
+window.addEventListener('dragover',e=>{
+  if(e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files')){
+    e.preventDefault();
+  }
+});
+window.addEventListener('drop',e=>{
+  if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]){
+    e.preventDefault();
+    startLoad(e.dataTransfer.files[0]);
+  }
+});
+
+// ── File close ──
+$('close-btn').addEventListener('click',closeCurrentFile);
+
+// ── Compare mode buttons ──
+$('compare-btn').addEventListener('click', startCompare);
+$('cmp-exit-btn').addEventListener('click', exitCompare);
+$('cmp-link').addEventListener('change', e=>{
+  compareLink = e.target.checked;
+  // When linking is turned ON, immediately sync the other pane to current pane A's window
+  if(compareLink && compareMode){
+    rerenderAfterChange('a','detail');
+    // Also sync schmitt windows if both have schmitt
+    const sA = sessions.find(s=>s.id===compareSessionAId);
+    if(sA && sA.schmittResult && sA.schmittResult.length){
+      rerenderAfterChange('a','schmitt');
+    }
+  }
+});
+$('cmp-swap-btn').addEventListener('click', ()=>{
+  if(!compareMode) return;
+  [compareSessionAId, compareSessionBId] = [compareSessionBId, compareSessionAId];
+  renderComparePane('a');
+  renderComparePane('b');
+  renderTabs();
+});
+// Picker dismiss on background click
+$('cmp-picker').addEventListener('click', e=>{
+  if(e.target.id==='cmp-picker') $('cmp-picker').classList.remove('show');
+});
+
+function startLoad(file){
+  // Don't start a new load while one is already in progress
+  if(loading.classList.contains('show')) return;
+  // Loading a new file exits compare mode (it would invalidate the comparison)
+  if(compareMode) exitCompare();
+  // Save the current session's state before loading a new file
+  const cur=currentSession();
+  if(cur) saveCurrent(cur);
+  cancelTransientModes();
+
+  // Create a new session for this file and make it active
+  const s=makeSession(file.name);
+  sessions.push(s);
+  currentSessionId=s.id;
+  loadInto(s); // resets all globals to fresh defaults from the new (empty) session
+
+  setView('loading','Reading…');
+  const r=new FileReader();
+  r.onload=e=>{fileText=e.target.result;setTimeout(processFile,10);};
+  r.readAsText(file);
+}
+
+// ── Parse header ──
+function processFile(){
+  setView('loading','Parsing header…');
+  meta={}; sigNames=[]; sigCount=0;
+  mergeMode=false; mergeChunkA=-1; mergeChunkB=-1; mergedExpData=null;
+
+  // Clear all panels and state from previous file
+  resetDetailState();
+  expPanel.classList.remove('show');
+  activeChunk=-1; selA=null; selB=null;
+  const TEK={'model':'model','model number':'model','firmware version':'firmware',
+    'horizontal units':'xUnit','sample interval':'sampleInterval',
+    'vertical units':'yUnit','vertical scale':'yScale'};
+
+  // ── Detect format: scan first few lines ──
+  let isYokogawa=false;
+  let yokoHeaderSize=0, yokoHRes=0, yokoHOffset=0;
+  let pos=0;
+
+  // Pre-scan for Yokogawa "Header Size"
+  const preLines=fileText.slice(0,Math.min(fileText.length,12000)).split('\n');
+  for(const raw of preLines){
+    const line=raw.replace(/\r$/,'');
+    const m=line.match(/^"Header Size"\s*,\s*(\d+)/i);
+    if(m){ isYokogawa=true; yokoHeaderSize=parseInt(m[1]); break; }
+  }
+
+  if(isYokogawa){
+    // ── Yokogawa DL350 format ──
+    const hdrLines=preLines.slice(0,yokoHeaderSize);
+    const strip=s=>s.trim().replace(/^"|"$/g,'').trim();
+
+    for(const raw of hdrLines){
+      const line=raw.replace(/\r$/,'');
+      const cells=line.split(',');
+      const key=strip(cells[0]).toLowerCase();
+
+      if(key==='model name')    meta.model=strip(cells[1]);
+      if(key==='tracename'){
+        sigNames=cells.slice(1).map(c=>strip(c)).filter(Boolean).slice(0,4);
+        sigCount=sigNames.length;
+      }
+      if(key==='hresolution')   { yokoHRes=parseFloat(cells[1])||0; meta.sampleInterval=String(yokoHRes); }
+      if(key==='samplerate'){
+        const sr=parseFloat(cells[1])||0;
+        if(sr>0 && !yokoHRes){ yokoHRes=1/sr; meta.sampleInterval=String(yokoHRes); }
+        meta._sampleRate=sr;
+      }
+      if(key==='hoffset')       yokoHOffset=parseFloat(cells[1])||0;
+      if(key==='vunit'){
+        // Collect per-channel units
+        const units=cells.slice(1).map(c=>strip(c)).filter(Boolean);
+        meta.yUnit=units[0]||'V';
+        meta._yUnits=units; // store all for per-channel display
+      }
+      if(key==='hunit')         meta.xUnit=strip(cells[1]);
+      if(key==='blocksize'){
+        const bs=parseFloat(cells[1])||0;
+        if(bs>0) meta._blockSize=bs;
+      }
+      if(key==='date')          meta._date=strip(cells[1]);
+      if(key==='time')          meta._time=strip(cells[1]);
+    }
+
+    // Data starts after header
+    pos=0;
+    for(let h=0;h<yokoHeaderSize;h++){
+      const nl=fileText.indexOf('\n',pos);
+      if(nl===-1){pos=fileText.length;break;}
+      pos=nl+1;
+    }
+    dataByteStart=pos;
+
+    // Store Yokogawa params for parseLine
+    meta._yokogawa=true;
+    meta._yokoHRes=yokoHRes;
+    meta._yokoHOffset=yokoHOffset;
+
+  } else {
+    // ── Tektronix family ──
+    // Two sub-layouts:
+    //   (a) "Time,CH1,..." header row, then time,volt data rows        (newer)
+    //   (b) metadata key/value in cols 0-1, waveform in last cols,
+    //       NO "Time" header row — classic TBS/TDS scope dump          (e.g. TBS1102B)
+    const preTek=fileText.slice(0,Math.min(fileText.length,8000)).split('\n')
+                         .map(l=>l.replace(/\r$/,''));
+    let hasTimeHeader=false;
+    for(const l of preTek){ if(/^\s*time\s*$/i.test(l.split(',')[0])){ hasTimeHeader=true; break; } }
+
+    if(hasTimeHeader){
+      // (a) newer Tektronix layout — original logic
+      pos=0;
+      while(pos<Math.min(fileText.length,8000)){
+        const nl=fileText.indexOf('\n',pos);
+        const le=nl===-1?fileText.length:nl;
+        const line=fileText.slice(pos,le).replace(/\r$/,'');
+        const cells=line.split(',');
+        const c0=cells[0].trim();
+        if(/^time$/i.test(c0)){
+          sigNames=cells.slice(1).map(c=>c.trim()).filter(Boolean).slice(0,4);
+          sigCount=sigNames.length;
+          dataByteStart=le+1;
+          break;
+        }
+        if(cells.length>=2){const k=c0.toLowerCase();if(TEK[k])meta[TEK[k]]=cells[1].trim();}
+        if(nl===-1)break;
+        pos=nl+1;
+      }
+    } else {
+      // (b) classic TBS/TDS column layout
+      const cellNum=(lineStr,colIdx)=>{
+        let col=0,cs=0;
+        for(let i=0;i<=lineStr.length;i++){
+          if(i===lineStr.length||lineStr[i]===','){
+            if(col===colIdx) return parseFloat(lineStr.slice(cs,i));
+            col++; cs=i+1;
+          }
+        }
+        return NaN;
+      };
+
+      let chName='';
+      let timeCol=-1, valCols=[];
+
+      // Read metadata (cols 0/1) and detect waveform columns.
+      for(const line of preTek){
+        const cells=line.split(',');
+        const key=(cells[0]||'').trim().toLowerCase();
+        const val=(cells[1]||'').trim();
+        if(key && val){
+          if(TEK[key]) meta[TEK[key]]=val;
+          if(key==='source') chName=val;
+        }
+        // Pure data row (no metadata in col 0): its numeric cells are time + channels.
+        if(timeCol===-1 && (cells[0]||'').trim()===''){
+          const nums=[];
+          for(let c=0;c<cells.length;c++){
+            const v=parseFloat(cells[c]);
+            if(isFinite(v) && cells[c].trim()!=='') nums.push(c);
+          }
+          if(nums.length>=2){ timeCol=nums[0]; valCols=nums.slice(1,5); }
+        }
+      }
+
+      // Fallback: no pure-data row in scan window → use last numeric cols of a row.
+      if(timeCol===-1){
+        for(const line of preTek){
+          const cells=line.split(',');
+          const nums=[];
+          for(let c=0;c<cells.length;c++){
+            const v=parseFloat(cells[c]);
+            if(isFinite(v) && cells[c].trim()!=='') nums.push(c);
+          }
+          if(nums.length>=2){ valCols=[nums[nums.length-1]]; timeCol=nums[nums.length-2]; break; }
+        }
+      }
+
+      if(timeCol>=0){
+        // Time base: read first two rows' time column (uniform sampling).
+        let t0=cellNum(preTek[0],timeCol);
+        const t1=cellNum(preTek[1]!==undefined?preTek[1]:'',timeCol);
+        let dt=(isFinite(t0)&&isFinite(t1))?(t1-t0):(parseFloat(meta.sampleInterval)||0);
+        if(!isFinite(t0)) t0=0;
+        if(!dt) dt=parseFloat(meta.sampleInterval)||0;
+
+        meta._tekCol=true;
+        meta._tekTimeCol=timeCol;
+        meta._tekValCols=valCols;
+        meta._tekT0=t0;
+        meta._tekDt=dt;
+        if(!meta.sampleInterval && dt) meta.sampleInterval=String(dt);
+
+        sigNames=valCols.map((_,k)=> (k===0 && chName) ? chName : 'CH'+(k+1));
+        sigCount=sigNames.length;
+        dataByteStart=0; // waveform begins on the very first row
+      }
+    }
+  }
+
+  if(!sigCount){
+    alert('Cannot find channel headers.');
+    // Remove the failed session so we don't leave an empty tab
+    const cur=currentSession();
+    if(cur){
+      const i=sessions.indexOf(cur);
+      if(i>=0) sessions.splice(i,1);
+    }
+    currentSessionId = sessions.length ? sessions[sessions.length-1].id : null;
+    if(currentSessionId){
+      loadInto(currentSession());
+      rebuildUIFromCurrent();
+    } else {
+      clearGlobalsToEmpty();
+      setView('drop');
+    }
+    renderTabs();
+    return;
+  }
+  visible=sigNames.map(()=>true);
+  buildToggles(); buildMetaStrip();
+  setTimeout(indexFile,10);
+}
+
+// ── Index newlines (chunked to avoid freeze) ──
+function indexFile(){
+  allLineOffsets=[]; chunkBoundaries=[0];
+  let pos=dataByteStart, count=0;
+  const TICK=4000000;
+  function run(){
+    const end=Math.min(pos+TICK,fileText.length);
+    while(pos<end){
+      allLineOffsets.push(pos);  // store start of every row
+      const nl=fileText.indexOf('\n',pos);
+      if(nl===-1){count++; pos=fileText.length;break;}
+      count++; pos=nl+1;
+      if(count%CHUNK_ROWS===0) chunkBoundaries.push(count);
+    }
+    if(pos<fileText.length){
+      setView('loading',`Scanning… ${Math.round(pos/fileText.length*100)}%`);
+      setTimeout(run,0);
+    } else {
+      totalRows=count;
+      buildPreviews();
+    }
+  }
+  run();
+}
+
+// ── Build downsampled preview per chunk ──
+function buildPreviews(){
+  chunks=[];
+  const n=chunkBoundaries.length;
+  let ci=0;
+  function next(){
+    if(ci>=n){finalize();return;}
+    const rowStart=chunkBoundaries[ci];
+    const rowEnd=ci+1<n?chunkBoundaries[ci+1]:totalRows;
+    const bStart=allLineOffsets[rowStart];
+    const bEnd=rowEnd<totalRows?allLineOffsets[rowEnd]:fileText.length;
+    const {time,chs}=sampleRows(rowStart,rowEnd,PREVIEW_PTS);
+    if(time.length){
+      chunks.push({byteStart:bStart,byteEnd:bEnd,rowStart,rowEnd,
+        tMin:time[0],tMax:time[time.length-1],pTime:time,pChs:chs});
+    }
+    ci++;
+    setView('loading',`Preview ${ci}/${n}…`);
+    setTimeout(next,0);
+  }
+  next();
+}
+
+function finalize(){
+  // Global Y range from all preview data
+  globalYMin=Infinity; globalYMax=-Infinity;
+  chunks.forEach(c=>c.pChs.forEach(ch=>ch.forEach(v=>{
+    if(!isNaN(v)){if(v<globalYMin)globalYMin=v;if(v>globalYMax)globalYMax=v;}
+  })));
+  const pad=(globalYMax-globalYMin)*0.06;
+  globalYMin-=pad; globalYMax+=pad;
+
+  setView('app');
+  chunksTitle.textContent=`${chunks.length} chunk${chunks.length>1?'s':''} × ${CHUNK_ROWS.toLocaleString()} rows — click to expand`;
+  renderCards();
+}
+
+// ── Chunk cards ──
+function renderCards(){
+  chunksScroll.innerHTML='';
+  chunks.forEach((c,i)=>{
+    const card=document.createElement('div');
+    card.className='card'; card.id=`card-${i}`;
+    card.innerHTML=`
+      <div class="card-top"><span>Chunk ${i+1}</span><b>${formatSI(c.tMin)}…${formatSI(c.tMax)}${meta.xUnit||'s'}</b></div>
+      <div class="card-canvas-wrap"><canvas id="cc-${i}" width="200" height="60"></canvas></div>
+      <div class="card-bot">${(c.rowEnd-c.rowStart).toLocaleString()} rows</div>`;
+    card.addEventListener('click',()=>expandChunk(i));
+    chunksScroll.appendChild(card);
+    requestAnimationFrame(()=>drawCard(i));
+  });
+}
+
+function drawCard(i){
+  const canvas=$(`cc-${i}`); if(!canvas)return;
+  const W=200,H=60;
+  const ctx=setupCanvas(canvas,W,H);
+  const c=chunks[i];
+  drawSignal(ctx,W,H,c.pTime,c.pChs,c.pTime[0],c.pTime[c.pTime.length-1],
+    globalYMin,globalYMax,{l:2,r:2,t:3,b:3},false,i===activeChunk);
+}
+
+// ── Expand chunk — show big preview with A/B selector ──
+function expandChunk(i){
+  // ── Merge intercept (new) ──
+  if(mergeMode){
+    if(i===mergeChunkA){return;} // can't merge with self
+    mergeChunkB=i;
+    mergeMode=false;
+    buildMergedExpanded(mergeChunkA,mergeChunkB);
+    return;
+  }
+
+  activeChunk=i;
+  mergedExpData=null; // clear previous merge state
+  // Update card highlights
+  chunks.forEach((_,ci)=>drawCard(ci));
+  document.querySelectorAll('.card').forEach((c,ci)=>c.classList.toggle('active',ci===i));
+
+  selA=null; selB=null;
+  resetDetailState();
+
+  expPanel.classList.add('show');
+  expTitle.textContent=`Chunk ${i+1} — ${formatSI(chunks[i].tMin)} → ${formatSI(chunks[i].tMax)}${meta.xUnit||'s'}`;
+  abInfo.textContent='Drag on the chart to select A → B range — plots automatically';
+
+  // Load denser preview for expanded view
+  setView('loading',`Loading chunk ${i+1}…`);
+  setTimeout(()=>{
+    const c=chunks[i];
+    const {time,chs}=sampleRows(c.rowStart,c.rowEnd,EXPANDED_PTS);
+    c.expTime=time; c.expChs=chs;
+    setView('app');
+    drawExpanded();
+    // Scroll expanded into view
+    expPanel.scrollIntoView({behavior:'smooth',block:'nearest'});
+  },20);
+}
+
+// ── Merge Chunk (new feature) ──
+const mergeBtn=$('merge-btn');
+const cancelMergeBtn=$('cancel-merge-btn');
+
+mergeBtn.addEventListener('click',()=>{
+  if(activeChunk<0) return;
+  mergeMode=true;
+  mergeChunkA=activeChunk;
+  mergeChunkB=-1;
+  // Don't clear mergedExpData here:
+  // The old merged chart is still displayed; xToTime needs it for correct time mapping
+  // Clearing is handled by cancelMergeBtn and expandChunk (single chunk)
+  mergeBtn.style.display='none';
+  cancelMergeBtn.style.display='';
+  abInfo.textContent='Click another chunk card to merge (click ✕ to cancel)';
+});
+
+cancelMergeBtn.addEventListener('click',()=>{
+  mergeMode=false;
+  mergeChunkA=-1; mergeChunkB=-1;
+  mergedExpData=null;
+  mergeBtn.style.display='';
+  cancelMergeBtn.style.display='none';
+  abInfo.textContent='Drag on the chart to select A → B range — plots automatically';
+});
+
+function buildMergedExpanded(idxA,idxB){
+  // Ensure idxA is the earlier chunk
+  if(chunks[idxA].tMin>chunks[idxB].tMin){const tmp=idxA;idxA=idxB;idxB=tmp;}
+  // Sync globals (loadDetail reads these)
+  mergeChunkA=idxA; mergeChunkB=idxB;
+
+  const cA=chunks[idxA], cB=chunks[idxB];
+
+  setView('loading',`Merging chunk ${idxA+1} + ${idxB+1}…`);
+  setTimeout(()=>{
+    // Load expanded-density data if not cached
+    function loadExp(c,cb){
+      if(c.expTime){cb();return;}
+      const {time,chs}=sampleRows(c.rowStart,c.rowEnd,EXPANDED_PTS);
+      c.expTime=time; c.expChs=chs;
+      cb();
+    }
+
+    loadExp(cA,()=>{
+      loadExp(cB,()=>{
+        // Concatenate time and channel arrays
+        const expTime=[...cA.expTime,...cB.expTime];
+        const expChs=cA.expChs.map((ch,ci)=>[...ch,...cB.expChs[ci]]);
+        mergedExpData={expTime,expChs,chunkA:idxA,chunkB:idxB};
+        activeChunk=idxA;
+
+        // Update UI
+        selA=null; selB=null;
+        expPanel.classList.add('show');
+        expTitle.textContent=`Chunk ${idxA+1} + ${idxB+1} (merged) — ${formatSI(expTime[0])} → ${formatSI(expTime[expTime.length-1])}${meta.xUnit||'s'}`;
+        abInfo.textContent='Drag on the chart to select A → B range — plots automatically';
+        mergeBtn.style.display='';
+        cancelMergeBtn.style.display='none';
+
+        // Highlight both cards
+        document.querySelectorAll('.card').forEach((c,ci)=>{
+          c.classList.toggle('active',ci===idxA||ci===idxB);
+        });
+        chunks.forEach((_,ci)=>drawCard(ci));
+
+        setView('app');
+        drawExpanded();
+        expPanel.scrollIntoView({behavior:'smooth',block:'nearest'});
+      });
+    });
+  },20);
+}
+
+function drawExpanded(){
+  // ── Use mergedExpData if available, else fall back to active chunk ──
+  const src = mergedExpData || (chunks[activeChunk]?.expTime ? chunks[activeChunk] : null);
+  if(!src) return;
+  const visCount=visible.reduce((a,b)=>a+b,0);
+  const W=expWrap.offsetWidth||800;
+  const H=visCount>=2 ? Math.max(180, visCount*80+PAD.t+PAD.b) : 180;
+
+  expWrap.style.height=H+'px';
+  const ctx=setupCanvas(expCanvas,W,H);
+  setupCanvas(selCanvas,W,H);
+  drawSignal(ctx,W,H,src.expTime,src.expChs,src.expTime[0],src.expTime[src.expTime.length-1],
+    globalYMin,globalYMax,PAD,true,false);
+  drawSel(W,H);
+}
+
+// ── A/B drag on expanded canvas ──
+function xToTime(px,W){
+  const src=mergedExpData||(chunks[activeChunk]?.expTime?chunks[activeChunk]:null);
+  if(!src) return 0;
+  const pw=W-PAD.l-PAD.r;
+  const f=Math.max(0,Math.min(1,(px-PAD.l)/pw));
+  return src.expTime[0]+f*(src.expTime[src.expTime.length-1]-src.expTime[0]);
+}
+function timeToX(t,W){
+  const src=mergedExpData||(chunks[activeChunk]?.expTime?chunks[activeChunk]:null);
+  if(!src) return 0;
+  const pw=W-PAD.l-PAD.r;
+  const tMin=src.expTime[0],tMax=src.expTime[src.expTime.length-1];
+  return PAD.l+((t-tMin)/(tMax-tMin))*pw;
+}
+
+// Chunk-expanded A/B selection: attach the shared range-drag helper.
+// xToTime/timeToX read the active expanded data via expWrap's current width.
+attachRangeDrag({
+  trigger: expWrap,
+  canvasForRect: expCanvas,
+  isActive: ()=>!!(mergedExpData||(chunks[activeChunk]?.expTime)),
+  pxToTime: (px)=>xToTime(px, expCanvas.offsetWidth),
+  timeToPx: (t)=>timeToX(t, expCanvas.offsetWidth),
+  getA: ()=>selA,        setA: v=>{selA=v;},
+  getB: ()=>selB,        setB: v=>{selB=v;},
+  getDragMode: ()=>dragMode, setDragMode: v=>{dragMode=v;},
+  onChange: ()=>{
+    drawSel(expCanvas.offsetWidth, expCanvas.offsetHeight);
+    updateAbInfo();
+  },
+  onComplete: ()=>{
+    if(selA!==null && selB!==null && selB>selA) triggerPlotDetail();
+  },
+  enableTouch: true,
+});
+
+function drawSel(W,H){
+  const tc=themeColors();
+  const ctx=setupCanvas(selCanvas,W,H);
+  if(selA===null||selB===null) return;
+  const xA=timeToX(selA,W), xB=timeToX(selB,W);
+  ctx.fillStyle=tc.selDim;
+  ctx.fillRect(PAD.l,0,xA-PAD.l,H-PAD.b);
+  ctx.fillRect(xB,0,W-PAD.r-xB,H-PAD.b);
+  ctx.fillStyle=tc.selFill;
+  ctx.fillRect(xA,0,xB-xA,H-PAD.b);
+  ctx.strokeStyle=CH_COLORS[0]; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(xA,0); ctx.lineTo(xA,H-PAD.b); ctx.stroke();
+  ctx.strokeStyle=CH_COLORS[1];
+  ctx.beginPath(); ctx.moveTo(xB,0); ctx.lineTo(xB,H-PAD.b); ctx.stroke();
+  ctx.font='10px JetBrains Mono';
+  ctx.fillStyle=CH_COLORS[0]; ctx.fillText('A',xA+4,14);
+  ctx.fillStyle=CH_COLORS[1]; ctx.fillText('B',xB+4,14);
+}
+
+function updateAbInfo(){
+  if(selA===null||selB===null||selA===selB){
+    abInfo.textContent='Drag on the chart to select A → B range — plots automatically';
+    plotDetailBtn.disabled=true; return;
+  }
+  const dur=selB-selA;
+  const si=parseFloat(meta.sampleInterval)||0;
+  const pts=si>0?Math.round(dur/si):'?';
+  abInfo.innerHTML=`<span style="color:var(--ch1)">A</span> <b>${formatSI(selA)}${meta.xUnit||'s'}</b> → <span style="color:var(--ch2)">B</span> <b>${formatSI(selB)}${meta.xUnit||'s'}</b> &nbsp;|&nbsp; Δ <b>${formatSI(dur)}${meta.xUnit||'s'}</b> &nbsp;|&nbsp; ~<b>${typeof pts==='number'?pts.toLocaleString():pts} pts</b>`;
+  plotDetailBtn.disabled=false;
+}
+
+// ── Plot Detail ──
+function triggerPlotDetail(){
+  if(selA===null||selB===null||selB<=selA) return;
+  plotDetailBtn.disabled=true; plotDetailBtn.textContent='Loading…';
+  setTimeout(()=>loadDetail(selA,selB),20);
+}
+plotDetailBtn.addEventListener('click',triggerPlotDetail);
+
+function loadDetail(tA,tB){
+  const time=[],chs=Array.from({length:sigCount},()=>[]);
+
+  // Determine which byte ranges to scan
+  // merge 狀態：同時掃兩個 chunk；否則只掃 activeChunk
+  const scanRanges = mergedExpData
+    ? [ chunks[mergedExpData.chunkA], chunks[mergedExpData.chunkB] ].filter(Boolean)
+    : [ chunks[activeChunk] ].filter(Boolean);
+
+  if(!scanRanges.length){ plotDetailBtn.disabled=false; plotDetailBtn.textContent='Plot Detail →'; return; }
+
+  scanRanges.forEach(c=>{
+    if(meta._yokogawa){
+      // Yokogawa: time = offset + rowIdx * hRes → binary search for start row
+      const startRow=Math.max(c.rowStart, Math.floor((tA - meta._yokoHOffset) / meta._yokoHRes));
+      const endRow=Math.min(c.rowEnd, Math.ceil((tB - meta._yokoHOffset) / meta._yokoHRes) + 1);
+      for(let ri=startRow;ri<endRow;ri++){
+        if(ri>=allLineOffsets.length) break;
+        const t=meta._yokoHOffset + ri * meta._yokoHRes;
+        if(t>=tA&&t<=tB){
+          const pos=allLineOffsets[ri];
+          const nl=fileText.indexOf('\n',pos);
+          const le=nl===-1?fileText.length:nl;
+          parseLine(fileText,pos,le,time,chs,ri);
+        }
+      }
+    } else if(meta._tekCol){
+      // Classic TBS/TDS: time is uniform → synthesize for the range check.
+      for(let ri=c.rowStart;ri<c.rowEnd;ri++){
+        if(ri>=allLineOffsets.length) break;
+        const t=meta._tekT0 + ri*meta._tekDt;
+        if(meta._tekDt>0 && t>tB) break; // monotonic, stop early
+        if(meta._tekDt<=0 || t>=tA){
+          const pos=allLineOffsets[ri];
+          const nl=fileText.indexOf('\n',pos);
+          const le=nl===-1?fileText.length:nl;
+          parseLine(fileText,pos,le,time,chs,ri);
+        }
+      }
+    } else {
+      // Tektronix: iterate rows using allLineOffsets (avoids full byte scan)
+      for(let ri=c.rowStart;ri<c.rowEnd;ri++){
+        if(ri>=allLineOffsets.length) break;
+        const pos=allLineOffsets[ri];
+        const nl=fileText.indexOf('\n',pos);
+        const le=nl===-1?fileText.length:nl;
+        const comma=fileText.indexOf(',',pos);
+        if(comma>pos&&comma<le){
+          const t=parseFloat(fileText.slice(pos,comma));
+          if(!isNaN(t)){
+            if(t>tB) break; // data is monotonic, stop early
+            if(t>=tA) parseLine(fileText,pos,le,time,chs);
+          }
+        }
+      }
+    }
+  });
+
+  detailData={time,chs,tA,tB,chunkIdx:activeChunk};
+  // Reset zoom and measure state on new load
+  zoomTMin=tA; zoomTMax=tB;
+  mA=null; mB=null; measureMode=false;
+  measureBtn.textContent='Measure A/B';
+  measureBtn.style.borderColor=''; measureBtn.style.color='';
+  measureBar.style.display='none';
+  detailCanvas.style.pointerEvents='auto';
+  measureCanvas.style.pointerEvents='none';
+  // Show the panel BEFORE drawing so detailWrap.offsetWidth is the real
+  // layout width (otherwise drawDetail falls back to its 800px default and
+  // the canvas only resizes on the first user interaction afterwards).
+  detailPanel.classList.add('show');
+  drawDetail();
+  plotDetailBtn.disabled=false; plotDetailBtn.textContent='Plot Detail →';
+  detailPanel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function drawDetail(){
+  if(!detailData) return;
+  const {time,chs}=detailData;
+  const vMin=zoomTMin, vMax=zoomTMax;
+
+  const visCount=visible.reduce((a,b)=>a+b,0);
+  const W=detailWrap.offsetWidth||800;
+  const H=visCount>=2 ? Math.max(260, visCount*100+PAD.t+PAD.b) : 260;
+  detailWrap.style.height=H+'px';
+  const ctx=setupCanvas(detailCanvas,W,H);
+
+  // Filter points in visible window
+  const vTime=[],vChs=chs.map(()=>[]);
+  for(let i=0;i<time.length;i++){
+    if(time[i]>=vMin&&time[i]<=vMax){
+      vTime.push(time[i]);
+      chs.forEach((ch,ci)=>vChs[ci].push(ch[i]));
+    }
+  }
+
+  // Y range from visible points
+  let yMin=Infinity,yMax=-Infinity;
+  vChs.forEach(ch=>ch.forEach(v=>{if(!isNaN(v)){if(v<yMin)yMin=v;if(v>yMax)yMax=v;}}));
+  if(!isFinite(yMin)){yMin=globalYMin;yMax=globalYMax;}
+  const yPad=(yMax-yMin)*0.08||0.1; yMin-=yPad; yMax+=yPad;
+
+  drawSignal(ctx,W,H,vTime,vChs,vMin,vMax,yMin,yMax,PAD,true,false);
+
+  // Zoom indicator label
+  const isZoomed=(vMin>detailData.tA||vMax<detailData.tB);
+  detailTitle.textContent=`Detail · ${formatSI(vMin)}→${formatSI(vMax)}${meta.xUnit||'s'} · ${vTime.length.toLocaleString()} pts`+(isZoomed?' [ZOOMED]':'');
+
+  let st=`<b>${vTime.length.toLocaleString()}</b> pts`;
+  vChs.forEach((ch,i)=>{
+    let mn=Infinity,mx=-Infinity,sum=0,cnt=0;
+    ch.forEach(v=>{if(!isNaN(v)){if(v<mn)mn=v;if(v>mx)mx=v;sum+=v;cnt++;}});
+    if(cnt){
+      const u=(meta._yUnits && meta._yUnits[i]) ? meta._yUnits[i] : (meta.yUnit||'V');
+      st+=` &nbsp;<span style="color:${CH_COLORS[i]}">${sigNames[i]} <b>${mn.toPrecision(4)}</b>…<b>${mx.toPrecision(4)} ${u}</b></span>`;
+    }
+  });
+  detailStatus.innerHTML=st;
+  drawMeasure();
+}
+
+// ── Detail zoom helpers ──
+function detailXtoTime(px){
+  const W=detailCanvas.offsetWidth;
+  const pw=W-PAD.l-PAD.r;
+  const f=Math.max(0,Math.min(1,(px-PAD.l)/pw));
+  return zoomTMin+f*(zoomTMax-zoomTMin);
+}
+
+// Scroll to zoom
+detailCanvas.addEventListener('wheel',e=>{
+  if(!detailData) return;
+  e.preventDefault();
+  const rect=detailCanvas.getBoundingClientRect();
+  const cx=detailXtoTime(e.clientX-rect.left); // time under cursor
+  const factor=e.deltaY>0?1.25:0.8;            // zoom out / in
+  const span=(zoomTMax-zoomTMin)*factor;
+  const minSpan=(detailData.tB-detailData.tA)*0.0001;
+  const clampedSpan=Math.max(span,minSpan);
+  // Keep cursor position fixed
+  const ratio=(cx-zoomTMin)/(zoomTMax-zoomTMin);
+  zoomTMin=cx-ratio*clampedSpan;
+  zoomTMax=zoomTMin+clampedSpan;
+  // Clamp to data range
+  if(zoomTMin<detailData.tA){zoomTMin=detailData.tA;zoomTMax=zoomTMin+clampedSpan;}
+  if(zoomTMax>detailData.tB){zoomTMax=detailData.tB;zoomTMin=zoomTMax-clampedSpan;}
+  zoomTMin=Math.max(zoomTMin,detailData.tA);
+  zoomTMax=Math.min(zoomTMax,detailData.tB);
+  drawDetail();
+},{passive:false});
+
+// Drag to pan
+detailCanvas.addEventListener('mousedown',e=>{
+  if(!detailData) return;
+  const rect=detailCanvas.getBoundingClientRect();
+  detailDragStart={x:e.clientX-rect.left, tMin:zoomTMin, tMax:zoomTMax};
+  e.preventDefault();
+});
+window.addEventListener('mousemove',e=>{
+  if(!detailDragStart||!detailData) return;
+  const rect=detailCanvas.getBoundingClientRect();
+  const dx=(e.clientX-rect.left)-detailDragStart.x;
+  const W=detailCanvas.offsetWidth, pw=W-PAD.l-PAD.r;
+  const dt=dx/pw*(detailDragStart.tMax-detailDragStart.tMin);
+  const span=detailDragStart.tMax-detailDragStart.tMin;
+  zoomTMin=detailDragStart.tMin-dt;
+  zoomTMax=detailDragStart.tMax-dt;
+  // Clamp
+  if(zoomTMin<detailData.tA){zoomTMin=detailData.tA;zoomTMax=zoomTMin+span;}
+  if(zoomTMax>detailData.tB){zoomTMax=detailData.tB;zoomTMin=zoomTMax-span;}
+  drawDetail();
+});
+window.addEventListener('mouseup',()=>{ detailDragStart=null; });
+
+// Double-click to reset zoom
+detailCanvas.addEventListener('dblclick',()=>{
+  if(!detailData) return;
+  zoomTMin=detailData.tA; zoomTMax=detailData.tB;
+  drawDetail();
+});
+
+// Reset zoom button
+resetZoomBtn.addEventListener('click',()=>{
+  if(!detailData) return;
+  zoomTMin=detailData.tA; zoomTMax=detailData.tB;
+  drawDetail();
+});
+
+// ── Measure A/B on detail canvas ──
+measureBtn.addEventListener('click',()=>{
+  measureMode=!measureMode;
+  mA=null; mB=null;
+  measureBtn.textContent=measureMode?'✕ Cancel Measure':'Measure A/B';
+  measureBtn.style.borderColor=measureMode?'var(--ch3)':'';
+  measureBtn.style.color=measureMode?'var(--ch3)':'';
+  measureBar.style.display=measureMode?'block':'none';
+  calcBtn.disabled=true;
+  if(!measureMode) schmittPanel.style.display='none';
+  measureInfo.textContent='Drag on the detail chart to place measure markers';
+  // Switch which canvas gets pointer events
+  detailCanvas.style.pointerEvents=measureMode?'none':'auto';
+  measureCanvas.style.pointerEvents=measureMode?'auto':'none';
+  drawMeasure();
+});
+
+calcBtn.addEventListener('click',()=>{
+  calcBtn.disabled=true;
+  calcBtn.textContent='Calculating…';
+  setTimeout(()=>{
+    runSchmitt();
+    calcBtn.textContent='Calculate →';
+  },20);
+});
+
+function detailMeasureXtoTime(px){
+  const W=measureCanvas.offsetWidth;
+  const pw=W-PAD.l-PAD.r;
+  const f=Math.max(0,Math.min(1,(px-PAD.l)/pw));
+  return zoomTMin+f*(zoomTMax-zoomTMin);
+}
+function measureTimeToX(t){
+  const W=measureCanvas.offsetWidth;
+  const pw=W-PAD.l-PAD.r;
+  return PAD.l+((t-zoomTMin)/(zoomTMax-zoomTMin||1))*pw;
+}
+
+// Detail measure markers (M-A/M-B): attach the shared range-drag helper.
+// Gated on measureMode + detailData. No touch (preserved from original).
+attachRangeDrag({
+  trigger: measureCanvas,
+  canvasForRect: measureCanvas,
+  isActive: ()=>!!(measureMode && detailData),
+  pxToTime: detailMeasureXtoTime,
+  timeToPx: measureTimeToX,
+  getA: ()=>mA, setA: v=>{mA=v;},
+  getB: ()=>mB, setB: v=>{mB=v;},
+  getDragMode: ()=>measureDrag, setDragMode: v=>{measureDrag=v;},
+  onChange: ()=>{ drawMeasure(); updateMeasureInfo(); },
+  enableTouch: false,
+});
+
+function drawMeasure(){
+  const W=detailCanvas.offsetWidth||800, H=detailCanvas.offsetHeight||260;
+  const ctx=setupCanvas(measureCanvas,W,H);
+  if(!measureMode||mA===null) return;
+
+  const xA=measureTimeToX(mA);
+  const xB=mB!==null?measureTimeToX(mB):xA;
+  const pH=H-PAD.b;
+
+  const tc=themeColors();
+  ctx.fillStyle=tc.measFill;
+  ctx.fillRect(xA,PAD.t,xB-xA,pH-PAD.t);
+
+  ctx.strokeStyle=CH_COLORS[2]; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(xA,PAD.t); ctx.lineTo(xA,pH); ctx.stroke();
+  ctx.strokeStyle=CH_COLORS[3];
+  ctx.beginPath(); ctx.moveTo(xB,PAD.t); ctx.lineTo(xB,pH); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.font='10px JetBrains Mono';
+  ctx.fillStyle=CH_COLORS[2];
+  ctx.textAlign= xA < W/2 ? 'left' : 'right';
+  ctx.fillText('M-A',xA+(xA<W/2?4:-4),PAD.t+12);
+  ctx.fillStyle=CH_COLORS[3];
+  ctx.textAlign= xB < W/2 ? 'left' : 'right';
+  ctx.fillText('M-B',xB+(xB<W/2?4:-4),PAD.t+24);
+}
+
+function updateMeasureInfo(){
+  if(!measureMode||mA===null||mB===null||mA===mB){
+    measureInfo.textContent='Drag on the detail chart to place measure markers';
+    return;
+  }
+  const dur=mB-mA;
+  const si=parseFloat(meta.sampleInterval)||0;
+  const pts=si>0?Math.round(Math.abs(dur)/si):'?';
+
+  // Get signal values at mA and mB (nearest points)
+  let valInfo='';
+  if(detailData){
+    const {time,chs}=detailData;
+    const iA=nearestIdx(time,mA), iB=nearestIdx(time,mB);
+    valInfo=sigNames.map((n,ci)=>{
+      const vA=chs[ci][iA], vB=chs[ci][iB];
+      const dv=vB-vA;
+      return `<span style="color:${CH_COLORS[ci]}">${n}: A=<b>${vA!==undefined?vA.toPrecision(4):'?'}</b> B=<b>${vB!==undefined?vB.toPrecision(4):'?'}</b> Δ=<b>${dv!==undefined?dv.toPrecision(4):'?'} ${meta.yUnit||'V'}</b></span>`;
+    }).join(' &nbsp;');
+  }
+
+  measureInfo.innerHTML=
+    `<span style="color:${CH_COLORS[2]}">M-A</span> <b>${formatSI(mA)}${meta.xUnit||'s'}</b> &nbsp;` +
+    `<span style="color:${CH_COLORS[3]}">M-B</span> <b>${formatSI(mB)}${meta.xUnit||'s'}</b> &nbsp;|&nbsp; ` +
+    `Δt <b>${formatSI(Math.abs(dur))}${meta.xUnit||'s'}</b> &nbsp;|&nbsp; ` +
+    `~<b>${typeof pts==='number'?pts.toLocaleString():pts} pts</b> &nbsp;|&nbsp; `+valInfo;
+
+  window.measureResult={mA,mB,dur,pts,detailData};
+  calcBtn.disabled=false;
+}
+
+function nearestIdx(arr,t){
+  let lo=0,hi=arr.length-1;
+  while(lo<hi){const mid=(lo+hi)>>1; if(arr[mid]<t)lo=mid+1; else hi=mid;}
+  return lo;
+}
+
+// ── Schmitt Trigger Analysis ──
+const schmittCanvas  = $('schmitt-canvas');
+const schmittSelCanvas=$('schmitt-sel-canvas');
+const schmittWrap    = $('schmitt-canvas-wrap');
+const schmittControls= $('schmitt-controls');
+const schmittStats   = $('schmitt-stats');
+const schmittSelInfo = $('schmitt-sel-info');
+const dlSchmittBtn   = $('dl-schmitt-btn');
+
+// Called after M-A / M-B are both set — auto-detect thresholds and show panel
+function runSchmitt(){
+  if(!detailData||mA===null||mB===null||mA===mB) return;
+  const {time,chs}=detailData;
+  const iA=nearestIdx(time,Math.min(mA,mB));
+  const iB=nearestIdx(time,Math.max(mA,mB));
+  if(iB<=iA) return;
+
+  // Auto-detect per-channel thresholds from data in [mA,mB]
+  schmittThresh = chs.map(ch=>{
+    let mn=Infinity,mx=-Infinity;
+    for(let i=iA;i<=iB;i++){const v=ch[i];if(v<mn)mn=v;if(v>mx)mx=v;}
+    const lo=mn+(mx-mn)*0.33, hi=mn+(mx-mn)*0.67;
+    return {lo:+lo.toPrecision(4), hi:+hi.toPrecision(4), min:mn, max:mx};
+  });
+
+  buildSchmittControls();
+  // Show the panel BEFORE applySchmitt's drawSchmitt() runs, so its
+  // schmittWrap.offsetWidth measurement reflects the real layout width.
+  schmittPanel.style.display='flex';
+  applySchmitt();
+  schmittPanel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function buildSchmittControls(){
+  schmittControls.innerHTML='';
+  const u=meta.yUnit||'V';
+  schmittThresh.forEach((th,ci)=>{
+    const row=document.createElement('div');
+    row.className='schmitt-row';
+    row.innerHTML=`
+      <span class="ch-name" style="color:${CH_COLORS[ci]};">${sigNames[ci]}</span>
+      <label>Low threshold<input id="tlo-${ci}" type="number" step="any" value="${th.lo}"> <span class="unit">${u}</span></label>
+      <label>High threshold<input id="thi-${ci}" type="number" step="any" value="${th.hi}"> <span class="unit">${u}</span></label>
+      <span class="unit">signal: ${th.min.toPrecision(4)}…${th.max.toPrecision(4)} ${u}</span>`;
+    schmittControls.appendChild(row);
+    // Live update on change
+    row.querySelector(`#tlo-${ci}`).addEventListener('input',readAndApply);
+    row.querySelector(`#thi-${ci}`).addEventListener('input',readAndApply);
+  });
+}
+
+function readAndApply(){
+  schmittThresh.forEach((th,ci)=>{
+    const lo=parseFloat($(`tlo-${ci}`)?.value);
+    const hi=parseFloat($(`thi-${ci}`)?.value);
+    if(!isNaN(lo)) th.lo=lo;
+    if(!isNaN(hi)) th.hi=hi;
+  });
+  applySchmitt();
+}
+
+function applySchmitt(){
+  const {time,chs}=detailData;
+  const iA=nearestIdx(time,Math.min(mA,mB));
+  const iB=nearestIdx(time,Math.max(mA,mB));
+
+  schmittResult = chs.map((ch,ci)=>{
+    const {lo,hi}=schmittThresh[ci];
+    const segments=[];
+
+    // Find the initial state by scanning forward until we hit a definite level
+    let state='U';
+    for(let i=iA;i<=iB;i++){
+      if(ch[i]>=hi){state='H';break;}
+      if(ch[i]<=lo){state='L';break;}
+    }
+    if(state==='U') return segments; // signal never crossed a threshold
+
+    let segStart=time[iA];
+
+    for(let i=iA;i<=iB;i++){
+      const v=ch[i], t=time[i];
+      let next=state;
+      if(state==='H' && v<=lo) next='L';
+      else if(state==='L' && v>=hi) next='H';
+      // 'U' → first crossing already handled above, won't appear again
+      if(next!==state){
+        segments.push({state, tStart:segStart, tEnd:t, dur:t-segStart});
+        state=next; segStart=t;
+      }
+    }
+    // Push final segment
+    segments.push({state, tStart:segStart, tEnd:time[iB], dur:time[iB]-segStart});
+    return segments;
+  });
+
+  // Reset zoom to full M-A..M-B range when a fresh Schmitt analysis is applied
+  schmittZoomTMin=null; schmittZoomTMax=null;
+
+  drawSchmitt();
+  renderSchmittStats();
+  drawDurationChart();
+  sA=null; sB=null; schmittClickPhase=0;
+}
+
+function drawSchmitt(){
+  const {time,chs}=detailData;
+  const iAfull=nearestIdx(time,Math.min(mA,mB));
+  const iBfull=nearestIdx(time,Math.max(mA,mB));
+  const tFullMin=time[iAfull], tFullMax=time[iBfull];
+
+  // Apply zoom window (defaults to the full M-A..M-B range)
+  if(schmittZoomTMin===null||schmittZoomTMax===null){
+    schmittZoomTMin=tFullMin; schmittZoomTMax=tFullMax;
+  }
+  // Clamp zoom window to data range
+  schmittZoomTMin=Math.max(schmittZoomTMin,tFullMin);
+  schmittZoomTMax=Math.min(schmittZoomTMax,tFullMax);
+  if(schmittZoomTMax<=schmittZoomTMin){
+    schmittZoomTMin=tFullMin; schmittZoomTMax=tFullMax;
+  }
+  const tMin=schmittZoomTMin, tMax=schmittZoomTMax;
+  const iA=nearestIdx(time,tMin), iB=nearestIdx(time,tMax);
+
+  const visibleChs=sigNames.map((_,i)=>visible[i]);
+  const visCount=visibleChs.filter(Boolean).length;
+  if(!visCount) return;
+
+  const W=schmittWrap.offsetWidth||800;
+  const ROW_H=90;
+  const AXIS_H=24;
+  const H=visCount*ROW_H+AXIS_H+8;
+  const PADs={l:44,r:12,t:8,b:AXIS_H};
+
+  // Save layout for hit-testing / overlay
+  schmittLayout={tMin,tMax,W,H,PADs,ROW_H,AXIS_H,visCount};
+
+  const ctx=setupCanvas(schmittCanvas,W,H);
+  const tc=themeColors();
+  ctx.fillStyle=tc.bg;
+  ctx.fillRect(0,0,W,H);
+
+  const pw=W-PADs.l-PADs.r;
+  const tx=t=>PADs.l+(t-tMin)/(tMax-tMin||1)*pw;
+
+  // X axis ticks
+  const xTicks=6;
+  ctx.strokeStyle=tc.grid; ctx.lineWidth=1;
+  for(let i=0;i<=xTicks;i++){
+    const t=tMin+(tMax-tMin)*i/xTicks;
+    const x=tx(t);
+    ctx.beginPath(); ctx.moveTo(x,PADs.t); ctx.lineTo(x,H-AXIS_H+4); ctx.stroke();
+    ctx.fillStyle=tc.axis; ctx.font='9px JetBrains Mono'; ctx.textAlign='center';
+    ctx.fillText(formatSI(t)+(meta.xUnit||'s'),x,H-AXIS_H+14);
+  }
+
+  // Minimum pixel width to show a duration label
+  const MIN_LABEL_PX=36;
+
+  let rowIdx=0;
+  chs.forEach((ch,ci)=>{
+    if(!visible[ci]||!schmittResult[ci]) return;
+    const rowTop=PADs.t+rowIdx*ROW_H;
+    rowIdx++;
+    const rowBot=rowTop+ROW_H-6;
+    const midY=(rowTop+rowBot)/2;
+    const highY=rowTop+10, lowY=rowBot-10;
+
+    // Row separator
+    ctx.strokeStyle=tc.border; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(PADs.l,rowBot+3); ctx.lineTo(W-PADs.r,rowBot+3); ctx.stroke();
+
+    // Channel label
+    ctx.fillStyle=CH_COLORS[ci]; ctx.font='bold 10px JetBrains Mono';
+    ctx.textAlign='right'; ctx.fillText(sigNames[ci],PADs.l-6,midY+3);
+
+    // H/L state labels
+    ctx.fillStyle=tc.axis; ctx.font='8px JetBrains Mono'; ctx.textAlign='left';
+    ctx.fillText('H',2,highY+3); ctx.fillText('L',2,lowY+3);
+
+    const segs=schmittResult[ci];
+
+    // Clip subsequent drawing to the row plot area (so zoomed/off-screen segments don't bleed)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(PADs.l,rowTop,pw,ROW_H-6);
+    ctx.clip();
+
+    // Shade HIGH segments
+    segs.forEach(seg=>{
+      if(seg.state!=='H') return;
+      if(seg.tEnd<tMin||seg.tStart>tMax) return;
+      const x1=tx(seg.tStart), x2=tx(seg.tEnd);
+      ctx.save(); ctx.globalAlpha=0.10; ctx.fillStyle=CH_COLORS[ci];
+      ctx.fillRect(x1,highY,x2-x1,lowY-highY); ctx.restore();
+    });
+
+    // Mini analog waveform overlay
+    const {min:vMin,max:vMax}=schmittThresh[ci];
+    const yRange=vMax-vMin||1;
+    ctx.strokeStyle=isDark?'rgba(255,255,255,0.13)':'rgba(0,0,0,0.12)'; ctx.lineWidth=1; ctx.beginPath();
+    let first2=true;
+    for(let k=iA;k<=iB;k++){
+      const x=tx(time[k]);
+      const y=lowY-((ch[k]-vMin)/yRange)*(lowY-highY);
+      if(first2){ctx.moveTo(x,y);first2=false;}else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+
+    // Digital waveform lines
+    ctx.strokeStyle=CH_COLORS[ci]; ctx.lineWidth=2;
+    ctx.beginPath();
+    let penDown=false;
+    segs.forEach(seg=>{
+      if(seg.tEnd<tMin||seg.tStart>tMax) { penDown=false; return; }
+      const x1=tx(seg.tStart), x2=tx(seg.tEnd);
+      const y=seg.state==='H'?highY:lowY;
+      if(!penDown){ctx.moveTo(x1,y);penDown=true;}else ctx.lineTo(x1,y);
+      ctx.lineTo(x2,y);
+    });
+    ctx.stroke();
+
+    // Vertical transitions
+    let prev=null;
+    segs.forEach(seg=>{
+      if(prev){
+        if(seg.tStart>=tMin&&seg.tStart<=tMax){
+          const x=tx(seg.tStart);
+          const y1=prev.state==='H'?highY:lowY;
+          const y2=seg.state==='H'?highY:lowY;
+          ctx.strokeStyle=CH_COLORS[ci]; ctx.lineWidth=2;
+          ctx.beginPath(); ctx.moveTo(x,y1); ctx.lineTo(x,y2); ctx.stroke();
+        }
+      }
+      prev=seg;
+    });
+
+    ctx.restore(); // end row clip
+
+    // ── Duration labels on each segment ──
+    ctx.font='8px JetBrains Mono';
+    segs.forEach(seg=>{
+      if(seg.tEnd<tMin||seg.tStart>tMax) return;
+      const x1=tx(seg.tStart), x2=tx(seg.tEnd);
+      const segPx=x2-x1;
+      if(segPx<MIN_LABEL_PX) return;   // too narrow — skip
+      const cx=(x1+x2)/2;
+      // Skip if center is outside the plot area (label would render in the margin)
+      if(cx<PADs.l||cx>W-PADs.r) return;
+      const isH=seg.state==='H';
+      const labelY=isH ? highY-3 : lowY+10;
+      const label=formatSI(seg.dur)+(meta.xUnit||'s');
+
+      // Background pill for readability
+      const tw=ctx.measureText(label).width+6;
+      ctx.save();
+      ctx.globalAlpha=0.7;
+      ctx.fillStyle=tc.bg;
+      ctx.fillRect(cx-tw/2,labelY-9,tw,11);
+      ctx.restore();
+
+      ctx.fillStyle=isH?CH_COLORS[ci]:tc.loBg;
+      ctx.textAlign='center';
+      ctx.fillText(label,cx,labelY);
+    });
+
+    // Threshold lines (dashed)
+    const {lo,hi}=schmittThresh[ci];
+    const tyLo=lowY-((lo-vMin)/yRange)*(lowY-highY);
+    const tyHi=lowY-((hi-vMin)/yRange)*(lowY-highY);
+    ctx.save(); ctx.setLineDash([3,3]); ctx.lineWidth=1;
+    ctx.strokeStyle=CH_COLORS[2]+'60';
+    ctx.beginPath(); ctx.moveTo(PADs.l,tyHi); ctx.lineTo(W-PADs.r,tyHi); ctx.stroke();
+    ctx.strokeStyle=CH_COLORS[3]+'60';
+    ctx.beginPath(); ctx.moveTo(PADs.l,tyLo); ctx.lineTo(W-PADs.r,tyLo); ctx.stroke();
+    ctx.restore();
+
+    // ── NG red box overlay ──
+    const thr=readGpioThresholds();
+    const {segGroup:_segGrp,afterTcmd:_afterTcmd}=buildSegmentGroups(segs,thr);
+    // segGroup returns objects; extract labels for the NG check
+    const _segLbl=_segGrp.map(g=>g?.label||null);
+
+    const NG_PAD = 3;
+    ctx.save();
+    // Clip NG boxes to the row plot area so they don't overflow when zoomed
+    ctx.beginPath();
+    ctx.rect(PADs.l,rowTop,pw,ROW_H-6);
+    ctx.clip();
+    ctx.strokeStyle = CH_COLORS[1];
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+
+    segs.forEach((seg, si) => {
+      if(seg.tEnd<tMin||seg.tStart>tMax) return;
+      const x1 = tx(seg.tStart), x2 = tx(seg.tEnd);
+      const isH = seg.state === 'H';
+      const grp = _segLbl[si];
+      let ng = false;
+
+      if(!isH && grp === 'TCMD') ng = !gpioInRange(toUs(seg.dur), thr.tcmdMin, thr.tcmdMax);
+      if( isH && grp === 'TCMD') ng = !gpioInRange(toUs(seg.dur), thr.tdMin, thr.tdMax);
+      if(_afterTcmd[si] && !isH && grp === '0') ng = !gpioInRange(toUs(seg.dur), thr.lo0Min, thr.lo0Max);
+      if(_afterTcmd[si] && !isH && grp === '1') ng = !gpioInRange(toUs(seg.dur), thr.hi1Min, thr.hi1Max);
+      if(_afterTcmd[si] && !isH && si + 1 < segs.length && segs[si+1].state === 'H' && (grp === '0' || grp === '1')){
+        const delayUs=_segGrp[si]?.delayUs||0;
+        const bl = toUs(seg.dur) + toUs(segs[si+1].dur) - delayUs;
+        if(!gpioInRange(bl, thr.blMin, thr.blMax)) ng = true;
+      }
+
+      if(ng){
+        const yTop = highY - NG_PAD;
+        const yBot = lowY + NG_PAD;
+        ctx.strokeRect(x1 - 1, yTop, x2 - x1 + 2, yBot - yTop);
+      }
+    });
+    ctx.restore();
+  });
+
+  drawSchmittSel();
+}
+
+// ── Schmitt A/B selection overlay ──
+function snapToTransition(t){
+  // Find the nearest segment boundary across all visible channels
+  let best=t, bestDist=Infinity;
+  if(!schmittLayout) return t;
+  const {tMin,tMax}=schmittLayout;
+  const snapRange=(tMax-tMin)*0.02; // 2% of range
+  schmittResult.forEach((segs,ci)=>{
+    if(!visible[ci]) return;
+    segs.forEach(seg=>{
+      [seg.tStart,seg.tEnd].forEach(edge=>{
+        const d=Math.abs(edge-t);
+        if(d<bestDist&&d<snapRange){bestDist=d;best=edge;}
+      });
+    });
+  });
+  return best;
+}
+
+// Helper: pixel x → time, using the current schmittLayout (zoom-aware)
+function schmittXtoTime(px){
+  if(!schmittLayout) return null;
+  const {tMin,tMax,W,PADs}=schmittLayout;
+  const pw=W-PADs.l-PADs.r;
+  return tMin+(Math.max(0,Math.min(1,(px-PADs.l)/pw)))*(tMax-tMin);
+}
+
+// Mousedown — start a potential drag (becomes a click if movement is small)
+schmittCanvas.addEventListener('mousedown',e=>{
+  if(!schmittLayout||!schmittResult.length) return;
+  if(e.button!==0) return; // left button only
+  const rect=schmittCanvas.getBoundingClientRect();
+  schmittDragStart={
+    x:e.clientX-rect.left,
+    y:e.clientY-rect.top,
+    tMin:schmittLayout.tMin,
+    tMax:schmittLayout.tMax,
+    moved:false
+  };
+  e.preventDefault();
+});
+
+// Mousemove — pan if drag exceeds threshold
+window.addEventListener('mousemove',e=>{
+  if(!schmittDragStart||!schmittLayout||!schmittResult.length) return;
+  const rect=schmittCanvas.getBoundingClientRect();
+  const dx=(e.clientX-rect.left)-schmittDragStart.x;
+  if(!schmittDragStart.moved && Math.abs(dx)<4) return; // not yet a drag
+  schmittDragStart.moved=true;
+  const {W,PADs}=schmittLayout;
+  const pw=W-PADs.l-PADs.r;
+  const span=schmittDragStart.tMax-schmittDragStart.tMin;
+  const dt=dx/pw*span;
+  const {time}=detailData;
+  const tFullMin=time[nearestIdx(time,Math.min(mA,mB))];
+  const tFullMax=time[nearestIdx(time,Math.max(mA,mB))];
+  let nMin=schmittDragStart.tMin-dt;
+  let nMax=schmittDragStart.tMax-dt;
+  // Clamp to full M-A..M-B range
+  if(nMin<tFullMin){nMin=tFullMin;nMax=nMin+span;}
+  if(nMax>tFullMax){nMax=tFullMax;nMin=nMax-span;}
+  schmittZoomTMin=nMin; schmittZoomTMax=nMax;
+  drawSchmitt();
+});
+
+// Mouseup — if the press didn't turn into a drag, treat it as a click (place A/B)
+window.addEventListener('mouseup',e=>{
+  if(!schmittDragStart) return;
+  const wasDrag=schmittDragStart.moved;
+  schmittDragStart=null;
+  if(wasDrag) return; // was a pan, not a click
+  if(!schmittLayout||!schmittResult.length) return;
+  // Only count if the release happened over the schmitt canvas
+  const rect=schmittCanvas.getBoundingClientRect();
+  const px=e.clientX-rect.left, py=e.clientY-rect.top;
+  if(px<0||px>rect.width||py<0||py>rect.height) return;
+
+  const rawT=schmittXtoTime(px);
+  const snapped=snapToTransition(rawT);
+
+  if(schmittClickPhase===0){ sA=snapped; sB=null; schmittClickPhase=1; }
+  else if(schmittClickPhase===1){
+    sB=snapped;
+    if(sB<sA)[sA,sB]=[sB,sA];
+    schmittClickPhase=2;
+  } else {
+    // reset — start over
+    sA=snapped; sB=null; schmittClickPhase=1;
+  }
+  drawSchmittSel();
+  updateSchmittSelInfo();
+});
+
+// Scroll to zoom (cursor-anchored)
+schmittCanvas.addEventListener('wheel',e=>{
+  if(!schmittLayout||!schmittResult.length||!detailData) return;
+  e.preventDefault();
+  const rect=schmittCanvas.getBoundingClientRect();
+  const cx=schmittXtoTime(e.clientX-rect.left); // time under cursor
+  const factor=e.deltaY>0?1.25:0.8;             // zoom out / in
+  const {time}=detailData;
+  const tFullMin=time[nearestIdx(time,Math.min(mA,mB))];
+  const tFullMax=time[nearestIdx(time,Math.max(mA,mB))];
+  const fullSpan=tFullMax-tFullMin;
+  const curSpan=schmittZoomTMax-schmittZoomTMin;
+  const newSpan=Math.max(curSpan*factor, fullSpan*0.0001);
+  // Keep cursor position fixed
+  const ratio=(cx-schmittZoomTMin)/(curSpan||1);
+  let nMin=cx-ratio*newSpan;
+  let nMax=nMin+newSpan;
+  // Clamp to full M-A..M-B range
+  if(nMin<tFullMin){nMin=tFullMin;nMax=nMin+newSpan;}
+  if(nMax>tFullMax){nMax=tFullMax;nMin=nMax-newSpan;}
+  nMin=Math.max(nMin,tFullMin);
+  nMax=Math.min(nMax,tFullMax);
+  schmittZoomTMin=nMin; schmittZoomTMax=nMax;
+  drawSchmitt();
+},{passive:false});
+
+// Double-click to reset zoom
+schmittCanvas.addEventListener('dblclick',()=>{
+  if(!schmittLayout||!schmittResult.length||!detailData) return;
+  schmittZoomTMin=null; schmittZoomTMax=null;
+  drawSchmitt();
+});
+
+// Reset Zoom button
+$('reset-schmitt-zoom-btn').addEventListener('click',()=>{
+  if(!schmittLayout||!schmittResult.length||!detailData) return;
+  schmittZoomTMin=null; schmittZoomTMax=null;
+  drawSchmitt();
+});
+
+// Right-click clears
+schmittCanvas.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  sA=null; sB=null; schmittClickPhase=0;
+  drawSchmittSel();
+  schmittSelInfo.textContent='Click on the waveform to place A / B markers — snaps to transitions';
+});
+
+function drawSchmittSel(){
+  if(!schmittLayout) return;
+  const {W,H,PADs,tMin,tMax}=schmittLayout;
+  const ctx=setupCanvas(schmittSelCanvas,W,H);
+  if(sA===null) return;
+
+  const pw=W-PADs.l-PADs.r;
+  const tx=t=>PADs.l+(t-tMin)/(tMax-tMin||1)*pw;
+  const plotH=H-PADs.b;
+
+  const xA=tx(sA);
+
+  // A line
+  ctx.strokeStyle=CH_COLORS[2]; ctx.lineWidth=1.5; ctx.setLineDash([5,3]);
+  ctx.beginPath(); ctx.moveTo(xA,PADs.t); ctx.lineTo(xA,plotH); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font='bold 10px JetBrains Mono'; ctx.fillStyle=CH_COLORS[2];
+  ctx.textAlign= xA<W/2?'left':'right';
+  ctx.fillText('A',xA+(xA<W/2?4:-4),PADs.t+12);
+
+  if(sB!==null){
+    const xB=tx(sB);
+    ctx.fillStyle=isDark?'rgba(255,255,255,0.04)':'rgba(0,100,200,0.06)';
+    ctx.fillRect(xA,PADs.t,xB-xA,plotH-PADs.t);
+    ctx.strokeStyle=CH_COLORS[3]; ctx.lineWidth=1.5; ctx.setLineDash([5,3]);
+    ctx.beginPath(); ctx.moveTo(xB,PADs.t); ctx.lineTo(xB,plotH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font='bold 10px JetBrains Mono'; ctx.fillStyle=CH_COLORS[3];
+    ctx.textAlign= xB<W/2?'left':'right';
+    ctx.fillText('B',xB+(xB<W/2?4:-4),PADs.t+12);
+  }
+}
+
+function updateSchmittSelInfo(){
+  if(sA===null){
+    schmittSelInfo.textContent='Click on the waveform to place A / B markers — snaps to transitions';
+    return;
+  }
+  if(sB===null){
+    schmittSelInfo.innerHTML=`<span style="color:${CH_COLORS[2]}">A</span> = <b>${formatSI(sA)}${meta.xUnit||'s'}</b> — now click to place <span style="color:${CH_COLORS[3]}">B</span> &nbsp;(right-click to reset)`;
+    return;
+  }
+  const dur=sB-sA;
+  // Count segments within [sA,sB] per channel
+  let segInfo='';
+  schmittResult.forEach((segs,ci)=>{
+    if(!visible[ci]) return;
+    const inside=segs.filter(s=>s.tStart>=sA&&s.tEnd<=sB);
+    const h=inside.filter(s=>s.state==='H').length;
+    const l=inside.filter(s=>s.state==='L').length;
+    segInfo+=` &nbsp;<span style="color:${CH_COLORS[ci]}">${sigNames[ci]}: <b>${h}</b>H <b>${l}</b>L</span>`;
+  });
+  schmittSelInfo.innerHTML=
+    `<span style="color:${CH_COLORS[2]}">A</span> <b>${formatSI(sA)}${meta.xUnit||'s'}</b> &nbsp;`+
+    `<span style="color:${CH_COLORS[3]}">B</span> <b>${formatSI(sB)}${meta.xUnit||'s'}</b> &nbsp;|&nbsp;`+
+    `Δt <b>${formatSI(dur)}${meta.xUnit||'s'}</b>${segInfo} &nbsp;(right-click to reset / click again to reposition A)`;
+}
+
+// ── Duration number table (Excel-style) with GPIO threshold check ──
+function drawDurationChart(){
+  const wrap=$('dur-chart-wrap');
+  if(!wrap) return;
+
+  const activeChs=sigNames.map((_,ci)=>ci).filter(ci=>visible[ci]&&schmittResult[ci]?.length);
+  if(!activeChs.length){ wrap.style.display='none'; $('gpio-param-bar').style.display='none'; return; }
+  wrap.style.display='block';
+  $('gpio-param-bar').style.display='flex';
+
+  const thr=readGpioThresholds();
+  const PASS=CH_COLORS[3], FAIL=CH_COLORS[1];
+
+  const TH=`padding:5px 10px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+    border:1px solid var(--border);text-align:center;white-space:nowrap;background:var(--surface);`;
+  const TD=(color,bold='',align='right')=>
+    `padding:3px 10px;font-size:10px;border:1px solid var(--border);text-align:${align};
+     color:${color};${bold}font-family:JetBrains Mono,monospace;`;
+
+  let html='';
+
+  activeChs.forEach(ci=>{
+    const segs=schmittResult[ci];
+    if(!segs.length) return;
+
+    const allDur=segs.map(s=>s.dur);
+    const avgAll=allDur.reduce((a,v)=>a+v,0)/allDur.length;
+    const mn=Math.min(...allDur), mx=Math.max(...allDur);
+
+    // Use shared group classification
+    const {segGroup:groupOf,afterTcmd,pairSpan}=buildSegmentGroups(segs,thr);
+
+    // Decoded bit strings — split by TCMD boundaries.
+    // Each TCMD starts a new frame; bits after it until the next TCMD form one
+    // decoded group. Only the LOW half of the TCMD pair is a frame boundary —
+    // pairSpan[i] marks the HIGH (TD) half, which must be excluded or it
+    // creates a phantom empty frame and drops the frame's first data bit.
+    const tcmdIndices=[]; // indices in groupOf where TCMD starts (LOW seg index)
+    for(let i=0;i<segs.length;i++){
+      if(groupOf[i]&&groupOf[i].label==='TCMD'&&!pairSpan[i]) tcmdIndices.push(i);
+    }
+
+    // Build frames: each frame = {startAfter: HIGH index of TCMD, bits: ['0','1',...]}
+    // Each logical bit is a LOW+HIGH pair — both halves share the same group label,
+    // so we skip the HIGH half (pairSpan[i]===true) to avoid double-counting.
+    const allFrames=[];
+    tcmdIndices.forEach((ti,fi)=>{
+      const afterIdx=ti+1; // HIGH of TCMD pair
+      const nextTcmd=fi+1<tcmdIndices.length?tcmdIndices[fi+1]:segs.length;
+      const frameBits=[];
+      for(let i=afterIdx+1;i<nextTcmd;i++){
+        if(pairSpan[i]) continue; // skip HIGH half of each pair — already counted on its LOW
+        if(groupOf[i]&&groupOf[i].label!=='?'&&groupOf[i].label!=='TCMD')
+          frameBits.push(groupOf[i].label);
+      }
+      allFrames.push({startAfter:afterIdx, bits:frameBits});
+    });
+
+    // Drop empty frames — these are usually inter-frame idle LOWs whose width
+    // happens to fall inside the TCMD window, not real data frames.
+    const frames=allFrames.filter(f=>f.bits.length>0);
+
+    const totalBits=frames.reduce((s,f)=>s+f.bits.length,0);
+
+    // Build display string with line breaks between frames.
+    // Each TCMD frame's first 5 bits are the command code — auto-detect it for
+    // the selected IC and show the command name, category, the matched code,
+    // and what it is doing.
+    let decodedHtml='';
+    if(frames.length){
+      decodedHtml=frames.map((f,fi)=>{
+        const bitStr=f.bits.join('');
+        const rec=recognizeCmd(bitStr);
+        // Each frame is identified independently from its OWN 5-bit code (rec).
+        // A manually-selected command (window.analysisCmd) is used only as a
+        // fallback label when this frame's code isn't recognized — it never
+        // overrides a recognized frame, so a capture with several different
+        // TCMD commands is fully and independently resolved.
+        const sel=window.analysisCmd;
+        const assumed = !rec && sel && sel.start==='tcmd';
+        const cmd = rec || (assumed ? sel : null);
+        const codeStr = bitStr.slice(0,5);
+        const head=`<span style="color:var(--muted);font-weight:400;">TCMD${frames.length>1?`[${fi+1}]`:''}: </span>`
+          +`<b style="color:var(--text);">${bitStr}</b>`
+          +` <span style="color:var(--muted);font-size:8px;">(${f.bits.length} bits)</span>`;
+        if(!cmd){
+          return head + (bitStr.length>=5
+            ? ` <span style="color:var(--ch2);">→ unknown code <b>${codeStr}</b></span>`
+            : ` <span style="color:var(--muted);">→ too few bits to decode</span>`);
+        }
+        const m=CAT_META[cmd.cat];
+        const matched = rec ? `code <b>${codeStr}</b>`
+                            : `assumed — code <b>${codeStr}</b> not in ${currentIc()} table`;
+        const verifyTag = cmd.confirmed ? '' :
+          ` <span style="color:var(--ch2);font-size:8px;">(verify vs ${currentIc()} datasheet)</span>`;
+        // Payload check: bits decoded after the 5-bit command code vs the
+        // datasheet-expected response length (for READ commands).
+        let payloadLine='';
+        if(rec && cmd.payloadBits!=null){
+          const got=Math.max(0, bitStr.length-5);
+          if(cmd.payloadBits===0){
+            payloadLine=`<br><span style="color:var(--muted);font-size:8px;padding-left:14px;">payload: none expected</span>`;
+          } else {
+            const ok=got===cmd.payloadBits;
+            const col=ok?'var(--ch4)':'var(--ch2)';
+            payloadLine=`<br><span style="font-size:8px;padding-left:14px;color:${col};">`
+              +`payload: ${got} bits decoded · expects ${cmd.payloadBits}${ok?' ✓':''}</span>`;
+          }
+        }
+        return head
+          + `<br><span style="color:${m.color};font-weight:700;">${m.icon} ${cmd.id}</span>`
+          + ` <span style="font-size:8px;color:${m.color};">${m.label}</span>`
+          + ` <span style="color:var(--muted);font-size:8px;">· ${matched}</span>${verifyTag}`
+          + `<br><span style="color:var(--text);font-size:9px;padding-left:14px;">↳ ${cmd.does}</span>`
+          + payloadLine;
+      }).join('<br><br>');
+    }
+
+    html+=`<div class="channel-block" data-ch="${ci}" style="margin-bottom:12px;">
+      <div class="channel-heading" style="font-size:9px;color:${CH_COLORS[ci]};font-weight:600;letter-spacing:.1em;
+        text-transform:uppercase;padding:4px 0 4px 4px;">${sigNames[ci]} — ${totalBits} bits${frames.length>1?` (${frames.length} frames)`:''}
+      </div>
+      ${decodedHtml?`<div style="font-size:10px;padding:2px 0 6px 4px;line-height:1.6;">${decodedHtml}</div>`:''}
+      <div style="overflow-x:auto;">
+      <table style="border-collapse:collapse;">
+        <tbody>`;
+
+    // Row 1: Pulse #
+    html+=`<tr><td style="${TH}color:var(--muted);min-width:52px;">Pulse #</td>`;
+    segs.forEach((_,i)=>{
+      html+=`<td style="${TH}color:var(--muted);min-width:80px;">${i+1}</td>`;
+    });
+    html+=`<td style="${TH}color:var(--muted);">avg</td>
+           <td style="${TH}color:var(--muted);">min</td>
+           <td style="${TH}color:var(--muted);">max</td></tr>`;
+
+    // Row 2: Group (TCMD / 0 / 1 spanning LOW+HIGH pair)
+    html+=`<tr>
+      <td style="${TD('var(--muted)','','center')}font-size:9px;">Group</td>`;
+    for(let i=0;i<segs.length;i++){
+      if(pairSpan[i]) continue;
+      if(groupOf[i]){
+        const {label,color}=groupOf[i];
+        html+=`<td colspan="2" style="padding:3px 10px;font-size:11px;font-weight:700;
+          border:1px solid var(--border);text-align:center;
+          color:${color};background:${color}18;
+          font-family:JetBrains Mono,monospace;letter-spacing:.06em;">${label}</td>`;
+      } else {
+        html+=`<td style="${TD('var(--border)','','center')}font-size:9px;">—</td>`;
+      }
+    }
+    html+=`<td colspan="3" style="${TD('var(--muted)','','center')}font-size:9px;"></td></tr>`;
+
+    // Row 3: State (HIGH/LOW)
+    html+=`<tr style="background:var(--bg);"><td style="${TD('var(--muted)','','center')}font-size:9px;">State</td>`;
+    segs.forEach(seg=>{
+      const isH=seg.state==='H';
+      const color=isH?CH_COLORS[ci]:(isDark?'#6b7a96':'#9ca3af');
+      html+=`<td style="${TD(color,'font-weight:700;','center')}font-size:9px;">${isH?'HIGH':'LOW'}</td>`;
+    });
+    html+=`<td colspan="3" style="${TD('var(--muted)','','center')}font-size:9px;"></td></tr>`;
+
+    // Row 4: Duration µs — GPIO check by group
+    html+=`<tr style="background:var(--surface);"><td style="${TD('var(--text)','','center')}font-size:9px;">µs</td>`;
+    segs.forEach((seg,si)=>{
+      const isH=seg.state==='H';
+      const val=toUs(seg.dur);
+      const grp=groupOf[si]?.label||null;
+      let shouldCheck=false, ok=true;
+      if(!isH && grp==='TCMD'){ shouldCheck=true; ok=gpioInRange(val, thr.tcmdMin, thr.tcmdMax); }
+      if( isH && grp==='TCMD'){ shouldCheck=true; ok=gpioInRange(val, thr.tdMin, thr.tdMax); }
+      if(afterTcmd[si] && !isH && grp==='0'){ shouldCheck=true; ok=gpioInRange(val, thr.lo0Min, thr.lo0Max); }
+      if(afterTcmd[si] && !isH && grp==='1'){ shouldCheck=true; ok=gpioInRange(val, thr.hi1Min, thr.hi1Max); }
+      const bdr=(!shouldCheck||ok)?'1px solid var(--border)':`2px solid ${CH_COLORS[1]}`;
+      html+=`<td style="padding:3px 10px;font-size:10px;border:${bdr};text-align:right;
+        color:var(--text);font-family:JetBrains Mono,monospace;">${val}</td>`;
+    });
+    html+=`<td style="${TD('var(--text)','font-weight:600;')}">${toUs(avgAll)}</td>
+           <td style="${TD((isDark?'#6b7a96':'#9ca3af'))}">${toUs(mn)}</td>
+           <td style="${TD((isDark?'#6b7a96':'#9ca3af'))}">${toUs(mx)}</td></tr>`;
+
+    // Row 5: Bitlength (LOW+HIGH per pair)
+    html+=`<tr style="background:var(--bg);border-top:2px solid var(--border);">
+      <td style="${TD('var(--text)','','center')}font-size:9px;">Bitlength<br>
+        <span style="font-size:7px;color:var(--muted);">[${thr.blMin}–${thr.blMax}]</span></td>`;
+    for(let i=0;i<segs.length;i++){
+      if(pairSpan[i]) continue;
+      if(segs[i].state==='L' && i+1<segs.length && segs[i+1].state==='H'){
+        const grp=groupOf[i]?.label||null;
+        if(grp==='TCMD' || !afterTcmd[i]){
+          html+=`<td colspan="2" style="${TD('var(--border)','','center')}font-size:9px;">—</td>`;
+        } else {
+          // If the HIGH half merged with trailing idle delay (last bit of a
+          // frame), use the standard width for the bitlength check and show
+          // the trimmed delay separately instead of letting it false-fail.
+          const delayUs=groupOf[i]?.delayUs||0;
+          const bl=toUs(segs[i].dur)+toUs(segs[i+1].dur)-delayUs;
+          const ok=gpioInRange(bl, thr.blMin, thr.blMax);
+          const bdr=ok?'1px solid var(--border)':`2px solid ${CH_COLORS[1]}`;
+          html+=`<td colspan="2" style="padding:3px 10px;font-size:10px;
+            border:${bdr};text-align:center;
+            color:var(--text);font-family:JetBrains Mono,monospace;">${bl.toFixed(2)}${delayUs>0?`<br><span style="font-size:7px;color:var(--muted);">+${delayUs.toFixed(2)}µs delay</span>`:''}</td>`;
+        }
+      } else {
+        html+=`<td style="${TD('var(--border)','','center')}font-size:9px;">—</td>`;
+      }
+    }
+    html+=`<td colspan="3" style="${TD('var(--muted)','','center')}font-size:9px;"></td></tr>`;
+
+    html+=`</tbody></table></div>`;
+
+    // ── Summary table: average LOW/HIGH per group (TCMD / 0 / 1) ──
+    // TCMD always counts. 0/1 bits count whether or not they follow a TCMD,
+    // so captures without any TCMD still produce a useful 0/1 summary.
+    const sums={TCMD:{L:[],H:[]}, '0':{L:[],H:[]}, '1':{L:[],H:[]}};
+    for(let i=0;i<segs.length;i++){
+      const g=groupOf[i]; if(!g) continue;
+      const lbl=g.label; if(lbl!=='TCMD'&&lbl!=='0'&&lbl!=='1') continue;
+      // Exclude trailing delay from HIGH so it doesn't skew the group average.
+      const durSec=(segs[i].state==='H'&&g.delayUs) ? (segs[i].dur-g.delayUs/1e6) : segs[i].dur;
+      sums[lbl][segs[i].state].push(durSec);
+    }
+    const avgOrNA=arr=>arr.length?toUs(arr.reduce((a,v)=>a+v,0)/arr.length).toFixed(1):'NA';
+    const gAvg={
+      TCMD:{L:avgOrNA(sums.TCMD.L), H:avgOrNA(sums.TCMD.H)},
+      '0' :{L:avgOrNA(sums['0'].L), H:avgOrNA(sums['0'].H)},
+      '1' :{L:avgOrNA(sums['1'].L), H:avgOrNA(sums['1'].H)},
+    };
+    const gN={
+      TCMD:{L:sums.TCMD.L.length, H:sums.TCMD.H.length},
+      '0' :{L:sums['0'].L.length, H:sums['0'].H.length},
+      '1' :{L:sums['1'].L.length, H:sums['1'].H.length},
+    };
+
+    const groupColors={TCMD:CH_COLORS[2]||'#f59e0b', '0':(isDark?'#6b7a96':'#9ca3af'), '1':CH_COLORS[ci]};
+    const SUM_TH=g=>`padding:4px 10px;font-size:10px;font-weight:700;letter-spacing:.1em;
+       border:1px solid var(--border);text-align:center;
+       color:${groupColors[g]};background:${groupColors[g]}18;
+       font-family:JetBrains Mono,monospace;`;
+    const SUB_TH=`padding:3px 10px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+       border:1px solid var(--border);text-align:center;color:var(--muted);background:var(--surface);`;
+    const SUM_TD=v=>`padding:4px 12px;font-size:10px;border:1px solid var(--border);text-align:right;
+       color:${v==='NA'?'var(--muted)':'var(--text)'};font-family:JetBrains Mono,monospace;`;
+    const N_TD=`padding:2px 12px;font-size:9px;border:1px solid var(--border);text-align:right;
+       color:var(--muted);background:var(--bg);font-family:JetBrains Mono,monospace;`;
+
+    html+=`<div class="summary-block" style="margin-top:8px;padding-top:6px;">
+      <div style="font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;
+        padding:0 0 4px 4px;">Average Duration by Group (µs)</div>
+      <div style="overflow-x:auto;"><table style="border-collapse:collapse;">
+        <tbody>
+          <tr>
+            <td colspan="2" style="${SUM_TH('TCMD')}">TCMD</td>
+            <td colspan="2" style="${SUM_TH('0')}">0</td>
+            <td colspan="2" style="${SUM_TH('1')}">1</td>
+          </tr>
+          <tr>
+            <td style="${SUB_TH}min-width:70px;">LOW</td>
+            <td style="${SUB_TH}min-width:70px;">HIGH</td>
+            <td style="${SUB_TH}min-width:70px;">LOW</td>
+            <td style="${SUB_TH}min-width:70px;">HIGH</td>
+            <td style="${SUB_TH}min-width:70px;">LOW</td>
+            <td style="${SUB_TH}min-width:70px;">HIGH</td>
+          </tr>
+          <tr>
+            <td style="${N_TD}">n=${gN.TCMD.L}</td>
+            <td style="${N_TD}">n=${gN.TCMD.H}</td>
+            <td style="${N_TD}">n=${gN['0'].L}</td>
+            <td style="${N_TD}">n=${gN['0'].H}</td>
+            <td style="${N_TD}">n=${gN['1'].L}</td>
+            <td style="${N_TD}">n=${gN['1'].H}</td>
+          </tr>
+          <tr>
+            <td style="${SUM_TD(gAvg.TCMD.L)}">${gAvg.TCMD.L}</td>
+            <td style="${SUM_TD(gAvg.TCMD.H)}">${gAvg.TCMD.H}</td>
+            <td style="${SUM_TD(gAvg['0'].L)}">${gAvg['0'].L}</td>
+            <td style="${SUM_TD(gAvg['0'].H)}">${gAvg['0'].H}</td>
+            <td style="${SUM_TD(gAvg['1'].L)}">${gAvg['1'].L}</td>
+            <td style="${SUM_TD(gAvg['1'].H)}">${gAvg['1'].H}</td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>`;
+
+    html+=`</div>`;
+  });
+
+  wrap.innerHTML=html;
+}
+
+// ── GPIO threshold input → live refresh pulse table ──
+['gpio-bl-min','gpio-bl-typ','gpio-bl-max',
+ 'gpio-lo0-min','gpio-lo0-typ','gpio-lo0-max',
+ 'gpio-hi1-min','gpio-hi1-typ','gpio-hi1-max',
+ 'gpio-tcmd-min','gpio-tcmd-typ','gpio-tcmd-max',
+ 'gpio-td-min','gpio-td-typ','gpio-td-max'].forEach(id=>{
+  $(id)?.addEventListener('input',()=>{
+    if(schmittResult.length) drawDurationChart();
+  });
+});
+
+// ── ELMOS E524.xx protocol: IC timing profiles + per-IC command tables ──
+// Each value is [min, typ, max] in µs. 524.33 is confirmed from the Elmos
+// E524.33 datasheet / AN0266 Table 6. 524.09 and 524.03 reuse the same
+// Elmos-family nominal pulse widths (50/100/150/200/250µs); their min/max
+// tolerance bands are seeded from 524.33 and flagged "verify" until checked
+// against the respective datasheet.
+const IC_PROFILES = {
+  '524.33': { confirmed:true,
+    bl:[131.3,150,166.2], lo0:[78.8,100,118.7], hi1:[21,50,71.2],
+    tcmd:[236.3,250,261.3], td:[21,50,71.2],
+    tsnd:[78.8,100,118.7], trec:[131.3,150,166.2], tmeas:[183.8,200,213.7] },
+  '524.09': { confirmed:false,
+    bl:[131.3,150,166.2], lo0:[78.8,100,118.7], hi1:[21,50,71.2],
+    tcmd:[236.3,250,261.3], td:[21,50,71.2],
+    tsnd:[78.8,100,118.7], trec:[131.3,150,166.2], tmeas:[183.8,200,213.7] },
+  '524.03': { confirmed:false,
+    bl:[131.3,150,166.2], lo0:[78.8,100,118.7], hi1:[21,50,71.2],
+    tcmd:[236.3,250,261.3], td:[21,50,71.2],
+    tsnd:[78.8,100,118.7], trec:[131.3,150,166.2], tmeas:[183.8,200,213.7] },
+  'BD40011A': { confirmed:true,
+    bl:[105,150,189], lo0:[79,100,118], hi1:[26,50,71],
+    tcmd:[237,250,261], td:[26,50,71],
+    // TSND/TREC follow the family convention (= IO-low-'0' / bit-length pulses);
+    // TMEAS is the family nominal (not supplied) — used only for the info line.
+    tsnd:[79,100,118], trec:[105,150,189], tmeas:[183.8,200,213.7] },
+};
+
+// Per-IC command tables. cat: 'meas' | 'cfg' | 'read'. start: which low pulse
+// begins the frame. code: the bit sequence after the start pulse (5 bits after
+// TCMD, 2 bits after TMEAS), null if not published. 'does' = what the command
+// is doing (for auto-detection readout). 524.33 is from AN0266 Tables 8 & 9.
+const CMD_524_33 = [
+  {id:'SEND_A',          cat:'meas', start:'tsnd',  code:null,    confirmed:true, payloadBits:null,
+   does:'Burst + profile-A measurement → echo reporting, then TD + 00 sync + STATUS_CFG status bits'},
+  {id:'RECEIVE_A',       cat:'meas', start:'trec',  code:null,    confirmed:true, payloadBits:null,
+   does:'Receive only (no burst), profile A — for triangulation; echo reporting + status'},
+  {id:'SEND_B',          cat:'meas', start:'tmeas', code:'10',    confirmed:true, payloadBits:null,
+   does:'Burst + profile-B measurement (NPULSES/TMEAS/THSEL_B)'},
+  {id:'RECEIVE_B',       cat:'meas', start:'tmeas', code:'00',    confirmed:true, payloadBits:null,
+   does:'Receive only, profile B'},
+  {id:'SEND_C',          cat:'meas', start:'tmeas', code:'11',    confirmed:true, payloadBits:null,
+   does:'Burst + profile-C measurement (NPULSES/TMEAS/THSEL_C)'},
+  {id:'RECEIVE_C',       cat:'meas', start:'tmeas', code:'01',    confirmed:true, payloadBits:null,
+   does:'Receive only, profile C'},
+  {id:'ENVELOPE_SEND_A', cat:'meas', start:'tcmd',  code:'10001', confirmed:true, payloadBits:null,
+   does:'Burst + profile-A measurement; envelope output on IO (DAC) instead of echo detection'},
+  {id:'ENVELOPE_REC_A',  cat:'meas', start:'tcmd',  code:'10010', confirmed:true, payloadBits:null,
+   does:'Profile-A receive; envelope output on IO instead of echo detection'},
+  {id:'THRES_A_WRITE',   cat:'cfg',  start:'tcmd',  code:'00000', confirmed:true, payloadBits:null,
+   does:'Writes Threshold Setup A register — sets threshold curve A; secured with parity bits'},
+  {id:'THRES_A_READ',    cat:'read', start:'tcmd',  code:'00011', confirmed:true, payloadBits:null,
+   does:'Reads back Threshold Setup A register'},
+  {id:'THRES_B_WRITE',   cat:'cfg',  start:'tcmd',  code:'00101', confirmed:true, payloadBits:null,
+   does:'Writes Threshold Setup B register — sets threshold curve B; secured with parity bits'},
+  {id:'THRES_B_READ',    cat:'read', start:'tcmd',  code:'00110', confirmed:true, payloadBits:null,
+   does:'Reads back Threshold Setup B register'},
+  {id:'MEAS_WRITE',      cat:'cfg',  start:'tcmd',  code:'01001', confirmed:true, payloadBits:null,
+   does:'Writes Measurement Setup register — profiles A/B/C: NPULSES, TMEAS, THSEL, STATUS_CFG'},
+  {id:'MEAS_READ',       cat:'read', start:'tcmd',  code:'01010', confirmed:true, payloadBits:null,
+   does:'Reads back Measurement Setup register'},
+  {id:'READ_STATUS',     cat:'read', start:'tcmd',  code:'01100', confirmed:true, payloadBits:17,
+   does:'Sensor returns 17 status bits: freq deviation (b0-4), valid flag, UV/OV, noise, near-field, setup-verify'},
+  {id:'READ_TEMP',       cat:'read', start:'tcmd',  code:'01111', confirmed:true, payloadBits:10,
+   does:'Sensor returns 10-bit temperature ADC value (MSB first)'},
+  {id:'READ_NFD_STATUS', cat:'read', start:'tcmd',  code:'10101', confirmed:true, payloadBits:24,
+   does:'Sensor returns near-field 13-bit energy level + 11-bit Tcomp (24 bits)'},
+  {id:'READ_ID',         cat:'read', start:'tcmd',  code:'01110', confirmed:true, payloadBits:24,
+   does:'Sensor returns 24-bit chip ID (MSB first)'},
+  {id:'STANDBY',         cat:'read', start:'tcmd',  code:'11101', confirmed:true, payloadBits:0,
+   does:'Enters standby mode (low current); settings/status retained'},
+  {id:'WAKE_UP',         cat:'read', start:'tcmd',  code:'11110', confirmed:true, payloadBits:0,
+   does:'Wakes from standby (any valid command also wakes)'},
+];
+// 524.09 / 524.03: full datasheets are not public — these are editable
+// templates (seeded from 524.33). Replace the codes/desc with the values
+// from the respective datasheet when available. Marked unconfirmed so the
+// auto-detection labels them "per .33 template — verify".
+const CMD_524_09 = CMD_524_33.map(c=>({...c, confirmed:false}));
+const CMD_524_03 = CMD_524_33.map(c=>({...c, confirmed:false}));
+// BD40011A: timing supplied & confirmed, but no public datasheet was found
+// (the part number isn't catalogued as an ultrasonic IC — likely a sensor
+// module / NDA part). Command table seeded from the 524.33 set (family-
+// compatible timing) and marked unconfirmed. Replace codes with the BD40011A
+// datasheet values when available.
+const CMD_BD40011A = CMD_524_33.map(c=>({...c, confirmed:false}));
+
+const IC_COMMANDS = { '524.33':CMD_524_33, '524.09':CMD_524_09, '524.03':CMD_524_03, 'BD40011A':CMD_BD40011A };
+
+const CAT_META = {
+  meas: {label:'Measurement',           icon:'📡', color:'var(--ch4)'},
+  cfg:  {label:'Threshold / config set', icon:'🔧', color:'var(--ch3)'},
+  read: {label:'Read / diagnostic',     icon:'📖', color:'var(--ch2)'},
+};
+const START_META = {
+  tsnd:  {sym:'TSND',  key:'tsnd'},
+  trec:  {sym:'TREC',  key:'trec'},
+  tmeas: {sym:'TMEAS', key:'tmeas'},
+  tcmd:  {sym:'TCMD',  key:'tcmd'},
+};
+
+// Currently-selected IC + command-set helpers.
+function currentIc(){ return $('proto-ic')?.value || '524.33'; }
+function currentCmds(){ return IC_COMMANDS[currentIc()] || CMD_524_33; }
+
+// Auto-detect a TCMD frame's command from its leading 5 decoded bits,
+// using the command table of the currently-selected IC.
+function recognizeCmd(bitStr){
+  if(bitStr.length<5) return null;
+  const head=bitStr.slice(0,5);
+  return currentCmds().find(c=>c.start==='tcmd' && c.code===head) || null;
+}
+// Currently selected command. null = Auto-detect (each TCMD frame is decoded
+// independently from its own 5-bit code, so a capture with several different
+// TCMD commands is fully resolved). A specific command only acts as a fallback
+// label for frames whose code isn't recognized.
+window.analysisCmd = null;
+
+// Apply an IC's timing profile into the threshold input fields.
+function applyIcProfile(icKey){
+  const p=IC_PROFILES[icKey]; if(!p) return;
+  const set=(base,arr)=>{
+    const lo=$(`gpio-${base}-min`), ty=$(`gpio-${base}-typ`), hi=$(`gpio-${base}-max`);
+    if(lo) lo.value=arr[0]; if(ty) ty.value=arr[1]; if(hi) hi.value=arr[2];
+  };
+  set('bl',p.bl); set('lo0',p.lo0); set('hi1',p.hi1); set('tcmd',p.tcmd); set('td',p.td);
+  const badge=$('proto-ic-badge');
+  if(badge) badge.style.display = p.confirmed ? 'none' : 'inline-block';
+}
+
+// Populate the command dropdown (grouped by category) for the current IC.
+// The first option is Auto-detect (per frame), which is the default.
+function buildCmdDropdown(){
+  const sel=$('proto-cmd'); if(!sel) return;
+  const cmds=currentCmds();
+  const groups=[['meas','Measurement'],['cfg','Threshold / config write'],['read','Read / diagnostic']];
+  const auto=`<option value="__auto__">🔍 Auto-detect (per frame)</option>`;
+  sel.innerHTML = auto + groups.map(([cat,label])=>{
+    const opts=cmds.filter(c=>c.cat===cat)
+      .map(c=>`<option value="${c.id}">${c.id}</option>`).join('');
+    return `<optgroup label="${label} (fallback)">${opts}</optgroup>`;
+  }).join('');
+  // Keep the previously-selected command if it still exists for this IC; else auto.
+  const keep=window.analysisCmd && cmds.find(c=>c.id===window.analysisCmd.id);
+  window.analysisCmd = keep || null;
+  sel.value = window.analysisCmd ? window.analysisCmd.id : '__auto__';
+}
+
+function updateProtoInfo(){
+  const info=$('proto-info'); if(!info) return;
+  const cmd=window.analysisCmd;
+  if(!cmd){
+    info.innerHTML=`<span style="color:var(--ch4);">🔍 Auto-detect</span> — `
+      +`each TCMD frame is identified from its own 5-bit code `
+      +`<span style="color:var(--muted);">(handles multiple, different commands per capture)</span>`;
+    return;
+  }
+  const meta=CAT_META[cmd.cat];
+  const st=START_META[cmd.start];
+  const p=IC_PROFILES[currentIc()];
+  const typ=p?.[st.key]?.[1];
+  let frame=`starts with <b>${st.sym}</b>${typ?` (${typ}µs)`:''}`;
+  if(cmd.start==='tcmd' && cmd.code) frame+=` + code <b>${cmd.code}</b>`;
+  else if(cmd.start==='tcmd')        frame+=` + 5 command bits`;
+  else if(cmd.start==='tmeas' && cmd.code) frame+=` + bits <b>${cmd.code}</b>`;
+  info.innerHTML=`<span style="color:var(--muted);">fallback:</span> `
+    +`<span style="color:${meta.color};">${meta.icon} ${meta.label}</span> — ${frame} · `
+    +`<span style="color:var(--muted);">${cmd.does}</span>`;
+}
+
+// Wire the selectors. Changing IC reloads timing, rebuilds the command list,
+// and re-renders the table so auto-detection updates for the new IC.
+$('proto-ic')?.addEventListener('change',e=>{
+  applyIcProfile(e.target.value);
+  buildCmdDropdown();
+  updateProtoInfo();
+  if(schmittResult.length) drawDurationChart();
+});
+$('proto-cmd')?.addEventListener('change',e=>{
+  window.analysisCmd = e.target.value==='__auto__'
+    ? null
+    : (currentCmds().find(c=>c.id===e.target.value) || null);
+  updateProtoInfo();
+  if(schmittResult.length) drawDurationChart();
+});
+buildCmdDropdown();
+updateProtoInfo();
+
+
+
+
+// Copy table as TSV (tab-separated) — pastes cleanly into Excel
+$('copy-table-btn').addEventListener('click',()=>{
+  const wrap=$('dur-chart-wrap');
+  if(!wrap||wrap.style.display==='none') return;
+  const btn=$('copy-table-btn');
+
+  // Extract all tables and convert to TSV
+  const tables=wrap.querySelectorAll('table');
+  const lines=[];
+  tables.forEach(tbl=>{
+    // Channel heading (the div above the table)
+    const heading=tbl.closest('div[style*="margin-bottom"]')?.querySelector('div[style*="color"]');
+    if(heading) lines.push(heading.innerText.trim());
+    tbl.querySelectorAll('tr').forEach(tr=>{
+      const cells=[...tr.querySelectorAll('td,th')];
+      // Expand colspan cells
+      const row=[];
+      cells.forEach(td=>{
+        const span=parseInt(td.getAttribute('colspan')||'1');
+        const text=td.innerText.trim().replace(/\n+/g,' ');
+        for(let c=0;c<span;c++) row.push(text);
+      });
+      lines.push(row.join('\t'));
+    });
+    lines.push(''); // blank line between tables
+  });
+
+  navigator.clipboard.writeText(lines.join('\n')).then(()=>{
+    btn.textContent='✓ Copied!';
+    btn.style.borderColor='var(--ch4)';
+    btn.style.color='var(--ch4)';
+    setTimeout(()=>{
+      btn.textContent='⎘ Copy Table';
+      btn.style.borderColor='';
+      btn.style.color='';
+    },2000);
+  }).catch(()=>{
+    btn.textContent='Failed';
+    setTimeout(()=>{ btn.textContent='⎘ Copy Table'; },2000);
+  });
+});
+
+function renderSchmittStats(){
+  let html='';
+  schmittResult.forEach((segs,ci)=>{
+    if(!visible[ci]||!segs.length) return;
+    const highs=segs.filter(s=>s.state==='H');
+    const lows =segs.filter(s=>s.state==='L');
+    const sumH=highs.reduce((a,s)=>a+s.dur,0);
+    const sumL=lows .reduce((a,s)=>a+s.dur,0);
+    const total=sumH+sumL||1;
+    const avgH=highs.length?sumH/highs.length:0;
+    const avgL=lows.length ?sumL/lows.length :0;
+    const period=highs.length>=2?
+      (highs[highs.length-1].tStart-highs[0].tStart)/(highs.length-1):0;
+    const freq=period>0?1/period:0;
+
+    html+=`<div style="margin-bottom:8px;">
+      <span style="color:${CH_COLORS[ci]};font-weight:600;">${sigNames[ci]}</span> &nbsp;
+      Pulses: HIGH <b>${highs.length}</b>  LOW <b>${lows.length}</b> &nbsp;|&nbsp;
+      Duty cycle: <b>${(sumH/total*100).toFixed(1)}%</b> &nbsp;|&nbsp;
+      Avg HIGH: <b>${formatSI(avgH)}${meta.xUnit||'s'}</b> &nbsp;
+      Avg LOW: <b>${formatSI(avgL)}${meta.xUnit||'s'}</b> &nbsp;|&nbsp;
+      ${freq>0?`Est freq: <b>${formatSI(freq)}Hz</b>`:''}
+      <details style="display:inline;margin-left:12px;">
+        <summary style="cursor:pointer;font-size:9px;color:var(--muted);">Show all ${segs.length} segments</summary>
+        <table style="margin-top:4px;border-collapse:collapse;font-size:9px;">
+          <tr><th style="padding:2px 8px;color:var(--muted);text-align:left;">#</th>
+              <th style="padding:2px 8px;color:var(--muted);">State</th>
+              <th style="padding:2px 8px;color:var(--muted);">Start</th>
+              <th style="padding:2px 8px;color:var(--muted);">End</th>
+              <th style="padding:2px 8px;color:var(--muted);">Duration</th></tr>
+          ${segs.map((s,i)=>`<tr>
+            <td style="padding:1px 8px;color:var(--muted);">${i+1}</td>
+            <td style="padding:1px 8px;color:${s.state==='H'?CH_COLORS[ci]:'var(--muted)'};font-weight:600;">${s.state}</td>
+            <td style="padding:1px 8px;">${formatSI(s.tStart)}${meta.xUnit||'s'}</td>
+            <td style="padding:1px 8px;">${formatSI(s.tEnd)}${meta.xUnit||'s'}</td>
+            <td style="padding:1px 8px;"><b>${formatSI(s.dur)}${meta.xUnit||'s'}</b></td>
+          </tr>`).join('')}
+        </table>
+      </details>
+    </div>`;
+  });
+  schmittStats.innerHTML=html;
+}
+
+// Download Schmitt results as CSV
+dlSchmittBtn.addEventListener('click',()=>{
+  if(!schmittResult.length) return;
+  let csv='Channel,Segment,State,Start,End,Duration\n';
+  schmittResult.forEach((segs,ci)=>{
+    segs.forEach((s,i)=>{
+      csv+=`${sigNames[ci]},${i+1},${s.state},${s.tStart},${s.tEnd},${s.dur}\n`;
+    });
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='schmitt_analysis.csv'; a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+// ── Core draw function — Canvas2D signal renderer ──
+function drawSignal(ctx,W,H,time,chsArr,tMin,tMax,yMin,yMax,pad,axes,highlight){
+  const tc=themeColors();
+  ctx.fillStyle=tc.bg;
+  ctx.fillRect(0,0,W,H);
+
+  const pw=W-pad.l-pad.r;
+  const ph=H-pad.t-pad.b;
+  const tx=t=>pad.l+(t-tMin)/(tMax-tMin||1)*pw;
+
+  // Decide: stacked lanes when axes shown AND 2+ channels
+  const visibleChs=chsArr.map((_,ci)=>visible[ci]).reduce((a,b)=>a+b,0);
+  const stacked=axes && visibleChs>=2;
+
+  if(stacked){
+    // ── Stacked-lane mode ──
+    const laneGap=4;
+    const totalGaps=laneGap*(visibleChs-1);
+    const laneH=(ph-totalGaps)/visibleChs;
+
+    // X-axis grid + labels (shared)
+    if(axes){
+      const xTicks=5;
+      for(let i=0;i<=xTicks;i++){
+        const t=tMin+(tMax-tMin)*i/xTicks;
+        const x=tx(t);
+        ctx.strokeStyle=tc.grid; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(x,pad.t); ctx.lineTo(x,H-pad.b); ctx.stroke();
+        ctx.fillStyle=tc.axis; ctx.font='9px JetBrains Mono';
+        ctx.textAlign='center'; ctx.fillText(formatSI(t)+(meta.xUnit||'s'),x,H-pad.b+11);
+      }
+    }
+
+    let laneIdx=0;
+    chsArr.forEach((ch,ci)=>{
+      if(!visible[ci]) return;
+      const laneTop=pad.t+laneIdx*(laneH+laneGap);
+
+      // Per-channel Y range
+      let cMin=Infinity, cMax=-Infinity;
+      for(let j=0;j<ch.length;j++){
+        const v=ch[j]; if(!isNaN(v)){if(v<cMin)cMin=v;if(v>cMax)cMax=v;}
+      }
+      if(!isFinite(cMin)){cMin=yMin;cMax=yMax;}
+      const cPad=(cMax-cMin)*0.08||0.01; cMin-=cPad; cMax+=cPad;
+      const tyL=v=>laneTop+(1-(v-cMin)/(cMax-cMin||1))*laneH;
+
+      // Lane background divider
+      if(laneIdx>0){
+        ctx.strokeStyle=tc.border; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(pad.l,laneTop-laneGap/2); ctx.lineTo(W-pad.r,laneTop-laneGap/2); ctx.stroke();
+      }
+
+      // Y grid for this lane
+      if(axes){
+        const yTicks=2;
+        ctx.strokeStyle=tc.grid; ctx.lineWidth=1;
+        for(let i=0;i<=yTicks;i++){
+          const v=cMin+(cMax-cMin)*i/yTicks;
+          const y=tyL(v);
+          ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
+          ctx.fillStyle=tc.axis; ctx.font='8px JetBrains Mono';
+          ctx.textAlign='right'; ctx.fillText(v.toPrecision(3),pad.l-4,y+3);
+        }
+        // Channel label
+        ctx.fillStyle=CH_COLORS[ci]; ctx.font='bold 8px JetBrains Mono';
+        ctx.textAlign='left'; ctx.fillText(sigNames[ci]||('CH'+(ci+1)),pad.l+3,laneTop+9);
+      }
+
+      // Clip to this lane and draw
+      ctx.save();
+      ctx.beginPath(); ctx.rect(pad.l,laneTop,pw,laneH); ctx.clip();
+      ctx.strokeStyle=CH_COLORS[ci]; ctx.lineWidth=1.5;
+      ctx.beginPath();
+      let started=false;
+      for(let j=0;j<time.length;j++){
+        const x=tx(time[j]), y=tyL(ch[j]);
+        if(!started){ctx.moveTo(x,y);started=true;} else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      laneIdx++;
+    });
+  } else {
+    // ── Original overlapped mode ──
+    const ty=v=>pad.t+(1-(v-yMin)/(yMax-yMin||1))*ph;
+
+    // Grid
+    if(axes){
+      ctx.strokeStyle=tc.grid; ctx.lineWidth=1;
+      const yTicks=5;
+      for(let i=0;i<=yTicks;i++){
+        const v=yMin+(yMax-yMin)*i/yTicks;
+        const y=ty(v);
+        ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
+        ctx.fillStyle=tc.axis; ctx.font='9px JetBrains Mono';
+        ctx.textAlign='right'; ctx.fillText(v.toPrecision(3),pad.l-4,y+3);
+      }
+      const xTicks=5;
+      for(let i=0;i<=xTicks;i++){
+        const t=tMin+(tMax-tMin)*i/xTicks;
+        const x=tx(t);
+        ctx.strokeStyle=tc.grid;
+        ctx.beginPath(); ctx.moveTo(x,pad.t); ctx.lineTo(x,H-pad.b); ctx.stroke();
+        ctx.fillStyle=tc.axis; ctx.font='9px JetBrains Mono';
+        ctx.textAlign='center'; ctx.fillText(formatSI(t)+(meta.xUnit||'s'),x,H-pad.b+11);
+      }
+    }
+
+    // Clip to plot area
+    ctx.save();
+    ctx.beginPath(); ctx.rect(pad.l,pad.t,pw,ph); ctx.clip();
+
+    // Lines per channel
+    chsArr.forEach((ch,ci)=>{
+      if(!visible[ci]) return;
+      ctx.strokeStyle=CH_COLORS[ci]; ctx.lineWidth=axes?1.5:1;
+      ctx.beginPath();
+      let started=false;
+      for(let j=0;j<time.length;j++){
+        const x=tx(time[j]), y=ty(ch[j]);
+        if(!started){ctx.moveTo(x,y);started=true;} else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  // Border
+  ctx.strokeStyle=highlight?CH_COLORS[0]:tc.border;
+  ctx.lineWidth=highlight?2:1;
+  ctx.strokeRect(pad.l,pad.t,pw,ph);
+}
+
+// ── Downloads ──
+dlChunkBtn.addEventListener('click',()=>{
+  if(activeChunk<0) return;
+  const c=chunks[activeChunk];
+  download(
+    fileText.slice(0,dataByteStart)+fileText.slice(c.byteStart,c.byteEnd),
+    `chunk_${activeChunk+1}.csv`
+  );
+});
+
+dlDetailBtn.addEventListener('click',()=>{
+  if(!detailData) return;
+  const {time,chs}=detailData;
+  let csv=fileText.slice(0,dataByteStart); // original header
+  for(let i=0;i<time.length;i++){
+    csv+=time[i];
+    chs.forEach(ch=>{ csv+=','+ch[i]; });
+    csv+='\n';
+  }
+  download(csv,`detail_A${formatSI(detailData.tA)}_B${formatSI(detailData.tB)}.csv`);
+});
+
+function download(content,filename){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([content],{type:'text/csv'}));
+  a.download=filename; a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ── Resize ──
+window.addEventListener('resize',()=>{
+  if(activeChunk>=0&&chunks[activeChunk]?.expTime) drawExpanded();
+  if(detailData) drawDetail();
+});
+
+// ── Parse line ──
+function parseLine(str,start,end,tArr,cArr,rowIdx){
+  if(end<=start) return;
+  let le=end; if(str[le-1]==='\r') le--;
+  if(le<=start) return;
+
+  if(meta._tekCol){
+    // Classic TBS/TDS: waveform sits in fixed columns; cols 0-1 may hold metadata.
+    const tc=meta._tekTimeCol, vcs=meta._tekValCols;
+    let col=0, cs=start, t=NaN;
+    const vals=new Array(vcs.length).fill(NaN);
+    for(let i=start;i<=le;i++){
+      if(i===le||str[i]===','){
+        if(col===tc){ t=parseFloat(str.slice(cs,i)); }
+        else { const vi=vcs.indexOf(col); if(vi>=0) vals[vi]=parseFloat(str.slice(cs,i)); }
+        col++; cs=i+1;
+      }
+    }
+    if(isNaN(t)) return; // not a data row
+    tArr.push(t);
+    for(let k=0;k<vcs.length;k++){ if(k<cArr.length) cArr[k].push(isNaN(vals[k])?0:vals[k]); }
+  } else if(meta._yokogawa){
+    // Yokogawa: no time column, leading comma(s), channel data only
+    // Time synthesized from rowIdx (if given) or tArr.length
+    const ri=(rowIdx!==undefined)?rowIdx:tArr.length;
+    const t=meta._yokoHOffset + ri * meta._yokoHRes;
+    let ci=0, cs=start;
+    for(let i=start;i<=le;i++){
+      if(i===le||str[i]===','){
+        if(i>cs){ // skip empty fields (leading comma)
+          const v=parseFloat(str.slice(cs,i));
+          if(ci===0 && isNaN(v)) return; // not a data row
+          if(ci<cArr.length) cArr[ci].push(isNaN(v)?0:v);
+          ci++;
+        }
+        cs=i+1;
+      }
+    }
+    if(ci>0) tArr.push(t);
+  } else {
+    // Tektronix: first column is time, rest are channels
+    let col=0,cs=start;
+    for(let i=start;i<=le;i++){
+      if(i===le||str[i]===','){
+        const v=parseFloat(str.slice(cs,i));
+        if(col===0){if(isNaN(v))return; tArr.push(v);}
+        else if(col<=cArr.length) cArr[col-1].push(isNaN(v)?0:v);
+        col++; cs=i+1;
+        if(col>cArr.length) break;
+      }
+    }
+  }
+}
+
+// ── Channel toggles ──
+function buildToggles(){
+  toggles.innerHTML='';
+  sigNames.forEach((name,i)=>{
+    const unit=(meta._yUnits && meta._yUnits[i]) ? ` (${meta._yUnits[i]})` : '';
+    const btn=document.createElement('button');
+    btn.className='ch-tog on';
+    btn.style.borderColor=CH_COLORS[i]; btn.style.color=CH_COLORS[i];
+    btn.innerHTML=`<span class="dot" style="background:${CH_COLORS[i]}"></span>${name}${unit}`;
+    btn.addEventListener('click',()=>{
+      visible[i]=!visible[i];
+      btn.className='ch-tog '+(visible[i]?'on':'off');
+      redrawCanvases();
+    });
+    toggles.appendChild(btn);
+  });
+}
+
+// ── Meta strip ──
+function buildMetaStrip(){
+  const p=[];
+  if(meta.model) p.push(`<span>Model <b>${meta.model}</b></span>`);
+  if(meta._date) p.push(`<span>Date <b>${meta._date}${meta._time?' '+meta._time:''}</b></span>`);
+  if(meta.sampleInterval){
+    const si=parseFloat(meta.sampleInterval);
+    p.push(`<span>Δt <b>${formatSI(si)}${meta.xUnit||'s'}</b></span>`);
+    p.push(`<span>fs <b>${formatSI(1/si)}Hz</b></span>`);
+  }
+  if(meta.yScale) p.push(`<span>Scale <b>${meta.yScale} ${meta.yUnit||'V'}/div</b></span>`);
+  if(meta._yUnits && meta._yUnits.length>1){
+    const unique=[...new Set(meta._yUnits)];
+    if(unique.length>1) p.push(`<span>Units <b>${meta._yUnits.join(', ')}</b></span>`);
+  }
+  if(meta._blockSize) p.push(`<span>Block <b>${meta._blockSize.toLocaleString()} pts</b></span>`);
+  metaStrip.innerHTML=p.join('');
+}
+
+// ── SI formatter ──
+function formatSI(v){
+  if(v===0)return'0'; const a=Math.abs(v);
+  if(a>=1e9)return(v/1e9).toPrecision(3)+'G';
+  if(a>=1e6)return(v/1e6).toPrecision(3)+'M';
+  if(a>=1e3)return(v/1e3).toPrecision(3)+'k';
+  if(a>=1)  return v.toPrecision(4);
+  if(a>=1e-3)return(v*1e3).toPrecision(3)+'m';
+  if(a>=1e-6)return(v*1e6).toPrecision(3)+'µ';
+  if(a>=1e-9)return(v*1e9).toPrecision(3)+'n';
+  return v.toExponential(2);
+}
+
+// ── View state ──
+function setView(v,msg){
+  dropZone.style.display='none';
+  loading.classList.remove('show');
+  app.classList.remove('show');
+  const closeBtn=$('close-btn');
+  if(closeBtn) closeBtn.style.display=(v==='app')?'':'none';
+  if(v==='drop'){dropZone.style.display='';}
+  else if(v==='loading'){loading.classList.add('show');if(msg)lmsg.textContent=msg;}
+  else if(v==='app'){app.classList.add('show');}
+  // Keep tab strip in sync with view changes (does nothing if no sessions)
+  if(typeof renderTabs==='function') renderTabs();
+}
+</script>
+</body>
+</html>
