@@ -1412,8 +1412,10 @@ function buildSegmentGroups(segs,thr){
 }
 
 // ── Detection Mode: pattern classifier ──
-// Variable-length pattern: D.Start(L+H) → Ring(L) → Echo(variable H/L pairs) → D.End(H short + L)
-// D.End is identified by a very short H (<200µs) followed by L, after at least one echo segment.
+// D.Start(L+H) → Ring(L) → H → Echo(L) → …H/L… → D.End(L+H short+L)
+// Echo = only L segments between Ring and D.End. H segments stay unlabeled.
+// D.End = L + H(<200µs) + L  (3 segments).
+// Distance = (D.Start H + Ring L + first H after Ring) × 343/20 → cm
 const DET_R={
   DSL:[30,300], DSH:[15,300], RING:[800,2000], DEH:[15,200], DEL:[30,300]
 };
@@ -1423,44 +1425,48 @@ function classifyDetectionSets(segs){
   const segGroup=new Array(segs.length).fill(null);
   const setIndex=new Array(segs.length).fill(-1);
 
-  for(let i=0;i<=segs.length-5;i++){
-    // D.Start: L [30-300µs], H [15-300µs]
+  for(let i=0;i<=segs.length-7;i++){
     if(segs[i].state!=='L') continue;
     let v=toUs(segs[i].dur);
     if(v<DET_R.DSL[0]||v>DET_R.DSL[1]) continue;
-    if(i+1>=segs.length||segs[i+1].state!=='H') continue;
+    if(segs[i+1].state!=='H') continue;
     v=toUs(segs[i+1].dur);
     if(v<DET_R.DSH[0]||v>DET_R.DSH[1]) continue;
-    // Ring: L [800-2000µs]
-    if(i+2>=segs.length||segs[i+2].state!=='L') continue;
+    if(segs[i+2].state!=='L') continue;
     v=toUs(segs[i+2].dur);
     if(v<DET_R.RING[0]||v>DET_R.RING[1]) continue;
-    // After Ring, expect H (first echo). Scan for D.End: short H + L
     if(i+3>=segs.length||segs[i+3].state!=='H') continue;
+    // Scan for D.End: L[30-300] + H[15-200] + L[30-300]
     let dEnd=-1;
-    const maxJ=Math.min(i+20,segs.length-1);
-    for(let j=i+3;j<maxJ;j+=2){
-      if(segs[j].state!=='H') break;
-      const hUs=toUs(segs[j].dur);
-      if(j+1>maxJ||segs[j+1].state!=='L') break;
-      const lUs=toUs(segs[j+1].dur);
-      if(hUs>=DET_R.DEH[0]&&hUs<=DET_R.DEH[1]&&lUs>=DET_R.DEL[0]&&lUs<=DET_R.DEL[1]){
+    const maxJ=Math.min(i+22,segs.length-2);
+    for(let j=i+4;j<maxJ;j++){
+      if(segs[j].state!=='L') continue;
+      if(j+2>=segs.length) break;
+      const lUs1=toUs(segs[j].dur);
+      const hUs=toUs(segs[j+1].dur);
+      const lUs2=toUs(segs[j+2].dur);
+      if(segs[j+1].state==='H'&&segs[j+2].state==='L'
+        &&lUs1>=DET_R.DEL[0]&&lUs1<=DET_R.DEL[1]
+        &&hUs>=DET_R.DEH[0]&&hUs<=DET_R.DEH[1]
+        &&lUs2>=DET_R.DEL[0]&&lUs2<=DET_R.DEL[1]){
         dEnd=j; break;
       }
     }
-    if(dEnd<0||dEnd<=i+3) continue; // need at least one echo H before D.End
+    if(dEnd<0) continue;
 
-    const endIdx=dEnd+1;
+    const endIdx=dEnd+2;
     const si=sets.length;
     sets.push({startIdx:i, endIdx:endIdx});
     segGroup[i]  ={label:'D.Start',color:CH_COLORS[2],range:DET_R.DSL};
     segGroup[i+1]={label:'D.Start',color:CH_COLORS[2],range:DET_R.DSH};
     segGroup[i+2]={label:'Ring',   color:CH_COLORS[3],range:DET_R.RING};
     for(let j=i+3;j<dEnd;j++){
-      segGroup[j]={label:'Echo',color:CH_COLORS[1]||'#34d399',range:null};
+      if(segs[j].state==='L')
+        segGroup[j]={label:'Echo',color:CH_COLORS[1]||'#34d399',range:null};
     }
-    segGroup[dEnd]  ={label:'D.End',color:CH_COLORS[0]||'#60a5fa',range:DET_R.DEH};
-    segGroup[dEnd+1]={label:'D.End',color:CH_COLORS[0]||'#60a5fa',range:DET_R.DEL};
+    segGroup[dEnd]  ={label:'D.End',color:CH_COLORS[0]||'#60a5fa',range:DET_R.DEL};
+    segGroup[dEnd+1]={label:'D.End',color:CH_COLORS[0]||'#60a5fa',range:DET_R.DEH};
+    segGroup[dEnd+2]={label:'D.End',color:CH_COLORS[0]||'#60a5fa',range:DET_R.DEL};
     for(let j=i;j<=endIdx;j++) setIndex[j]=si;
     i=endIdx;
   }
@@ -3618,12 +3624,14 @@ function drawDetectionDurationChart(wrap,activeChs){
           font-family:JetBrains Mono,monospace;letter-spacing:.06em;">D.Start</td>`;
         i++; continue;
       }
-      if(lbl==='D.End' && i+1<segs.length && segGroup[i+1]?.label==='D.End'){
-        html+=`<td colspan="2" style="padding:3px 10px;font-size:11px;font-weight:700;
+      if(lbl==='D.End'){
+        let span=1;
+        while(i+span<segs.length&&segGroup[i+span]?.label==='D.End') span++;
+        html+=`<td colspan="${span}" style="padding:3px 10px;font-size:11px;font-weight:700;
           border:1px solid var(--border);text-align:center;
           color:${g.color};background:${g.color}18;
           font-family:JetBrains Mono,monospace;letter-spacing:.06em;">D.End</td>`;
-        i++; continue;
+        i+=span-1; continue;
       }
       if(lbl==='Ring'){
         html+=`<td style="padding:3px 10px;font-size:11px;font-weight:700;
@@ -3683,46 +3691,35 @@ function drawDetectionDurationChart(wrap,activeChs){
 
     html+=`</tbody></table></div>`;
 
-    // ── Summary table: average per detection group ──
+    // ── Summary tables: average / max / min per detection group ──
     const sums={'D.Start':{L:[],H:[]}, 'Ring':{L:[]}, 'Echo':{L:[]}, 'D.End':{H:[],L:[]}, 'Dist':[]};
     sets.forEach(set=>{
       const s=set.startIdx, e=set.endIdx;
       sums['D.Start'].L.push(segs[s].dur);
       sums['D.Start'].H.push(segs[s+1].dur);
       sums['Ring'].L.push(segs[s+2].dur);
-      let echoLsum=0, echoHsum=0;
-      for(let j=s+3;j<e-1;j++){
-        if(segGroup[j]&&segGroup[j].label==='Echo'){
-          if(segs[j].state==='H') echoHsum+=segs[j].dur;
-          else echoLsum+=segs[j].dur;
-        }
+      let echoLsum=0;
+      for(let j=s+3;j<=e;j++){
+        if(segGroup[j]&&segGroup[j].label==='Echo') echoLsum+=segs[j].dur;
       }
       sums['Echo'].L.push(echoLsum);
-      // Distance = (D.Start H + Ring L + Echo H total) * 343 / 20  (time in ms → cm)
-      const tofSec=segs[s+1].dur+segs[s+2].dur+echoHsum;
+      // Distance = (D.Start H + Ring L + first H after Ring) in ms × 343/20 → cm
+      const tofSec=segs[s+1].dur+segs[s+2].dur+segs[s+3].dur;
       sums['Dist'].push(toUs(tofSec)/1000*343/20);
       sums['D.End'].H.push(segs[e-1].dur);
-      sums['D.End'].L.push(segs[e].dur);
+      sums['D.End'].L.push((segs[e-2].dur+segs[e].dur)/2);
     });
-    const avgOrNA=arr=>arr&&arr.length?toUs(arr.reduce((a,v)=>a+v,0)/arr.length).toFixed(1):'NA';
-    const avgOrNAraw=arr=>arr&&arr.length?(arr.reduce((a,v)=>a+v,0)/arr.length).toFixed(1):'NA';
-    const gAvg={
-      'D.Start':{L:avgOrNA(sums['D.Start'].L), H:avgOrNA(sums['D.Start'].H)},
-      'Ring'   :{L:avgOrNA(sums['Ring'].L)},
-      'Echo'   :{L:avgOrNA(sums['Echo'].L)},
-      'D.End'  :{H:avgOrNA(sums['D.End'].H), L:avgOrNA(sums['D.End'].L)},
-      'Dist'   :avgOrNAraw(sums['Dist']),
-    };
-    const gN={
-      'D.Start':{L:sums['D.Start'].L.length, H:sums['D.Start'].H.length},
-      'Ring'   :{L:sums['Ring'].L.length},
-      'Echo'   :{L:sums['Echo'].L.length},
-      'D.End'  :{H:sums['D.End'].H.length, L:sums['D.End'].L.length},
-      'Dist'   :sums['Dist'].length,
-    };
+
+    const calcFn=(arr,fn)=>arr&&arr.length?fn(arr):'NA';
+    const avgUs=arr=>calcFn(arr,a=>toUs(a.reduce((s,v)=>s+v,0)/a.length).toFixed(1));
+    const minUs=arr=>calcFn(arr,a=>toUs(Math.min(...a)).toFixed(1));
+    const maxUs=arr=>calcFn(arr,a=>toUs(Math.max(...a)).toFixed(1));
+    const avgRaw=arr=>calcFn(arr,a=>(a.reduce((s,v)=>s+v,0)/a.length).toFixed(1));
+    const minRaw=arr=>calcFn(arr,a=>Math.min(...a).toFixed(1));
+    const maxRaw=arr=>calcFn(arr,a=>Math.max(...a).toFixed(1));
+    const nOf=arr=>arr?arr.length:0;
 
     const pauseDurs=pauseInfos.map(p=>p.dur);
-    const pauseAvg=avgOrNA(pauseDurs);
     const pauseN=pauseDurs.length;
 
     const groupColors={'D.Start':CH_COLORS[2]||'#f59e0b', 'Ring':CH_COLORS[3]||'#a78bfa', 'Echo':CH_COLORS[1]||'#34d399', 'D.End':CH_COLORS[0]||'#60a5fa', 'Pause':'var(--muted)'};
@@ -3737,52 +3734,68 @@ function drawDetectionDurationChart(wrap,activeChs){
     const N_TD=`padding:2px 12px;font-size:9px;border:1px solid var(--border);text-align:right;
        color:var(--muted);background:var(--bg);font-family:JetBrains Mono,monospace;`;
 
-    html+=`<div class="summary-block" style="margin-top:8px;padding-top:6px;">
-      <div style="font-size:9px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;
-        padding:0 0 4px 4px;">Average Duration by Group (µs)</div>
-      <div style="overflow-x:auto;"><table style="border-collapse:collapse;">
-        <tbody>
-          <tr>
-            <td colspan="2" style="${SUM_TH('D.Start')}">D.Start</td>
-            <td style="${SUM_TH('Ring')}">Ring</td>
-            <td style="${SUM_TH('Echo')}">Echo</td>
-            <td colspan="2" style="${SUM_TH('D.End')}">D.End</td>
-            <td style="${SUM_TH('Echo')}">Distance</td>
-            ${pauseN?`<td style="${SUM_TH('Pause')}">Pause</td>`:''}
-          </tr>
-          <tr>
-            <td style="${SUB_TH}min-width:70px;">LOW</td>
-            <td style="${SUB_TH}min-width:70px;">HIGH</td>
-            <td style="${SUB_TH}min-width:70px;">LOW</td>
-            <td style="${SUB_TH}min-width:70px;">LOW</td>
-            <td style="${SUB_TH}min-width:70px;">HIGH</td>
-            <td style="${SUB_TH}min-width:70px;">LOW</td>
-            <td style="${SUB_TH}min-width:70px;">cm</td>
-            ${pauseN?`<td style="${SUB_TH}min-width:70px;">—</td>`:''}
-          </tr>
-          <tr>
-            <td style="${N_TD}">n=${gN['D.Start'].L}</td>
-            <td style="${N_TD}">n=${gN['D.Start'].H}</td>
-            <td style="${N_TD}">n=${gN['Ring'].L}</td>
-            <td style="${N_TD}">n=${gN['Echo'].L}</td>
-            <td style="${N_TD}">n=${gN['D.End'].H}</td>
-            <td style="${N_TD}">n=${gN['D.End'].L}</td>
-            <td style="${N_TD}">n=${gN['Dist']}</td>
-            ${pauseN?`<td style="${N_TD}">n=${pauseN}</td>`:''}
-          </tr>
-          <tr>
-            <td style="${SUM_TD(gAvg['D.Start'].L)}">${gAvg['D.Start'].L}</td>
-            <td style="${SUM_TD(gAvg['D.Start'].H)}">${gAvg['D.Start'].H}</td>
-            <td style="${SUM_TD(gAvg['Ring'].L)}">${gAvg['Ring'].L}</td>
-            <td style="${SUM_TD(gAvg['Echo'].L)}">${gAvg['Echo'].L}</td>
-            <td style="${SUM_TD(gAvg['D.End'].H)}">${gAvg['D.End'].H}</td>
-            <td style="${SUM_TD(gAvg['D.End'].L)}">${gAvg['D.End'].L}</td>
-            <td style="${SUM_TD(gAvg['Dist'])}">${gAvg['Dist']}</td>
-            ${pauseN?`<td style="${SUM_TD(pauseAvg)}">${pauseAvg}</td>`:''}
-          </tr>
-        </tbody>
-      </table></div>
-    </div>`;
+    // Build header/sub-header/n rows (shared across avg/max/min)
+    const hdrRow=`<tr>
+      <td colspan="2" style="${SUM_TH('D.Start')}">D.Start</td>
+      <td style="${SUM_TH('Ring')}">Ring</td>
+      <td style="${SUM_TH('Echo')}">Echo</td>
+      <td colspan="2" style="${SUM_TH('D.End')}">D.End</td>
+      <td style="${SUM_TH('Echo')}">Distance</td>
+      ${pauseN?`<td style="${SUM_TH('Pause')}">Pause</td>`:''}
+    </tr>`;
+    const subRow=`<tr>
+      <td style="${SUB_TH}min-width:70px;">LOW</td>
+      <td style="${SUB_TH}min-width:70px;">HIGH</td>
+      <td style="${SUB_TH}min-width:70px;">LOW</td>
+      <td style="${SUB_TH}min-width:70px;">LOW</td>
+      <td style="${SUB_TH}min-width:70px;">HIGH</td>
+      <td style="${SUB_TH}min-width:70px;">LOW</td>
+      <td style="${SUB_TH}min-width:70px;">cm</td>
+      ${pauseN?`<td style="${SUB_TH}min-width:70px;">—</td>`:''}
+    </tr>`;
+    const nRow=`<tr>
+      <td style="${N_TD}">n=${nOf(sums['D.Start'].L)}</td>
+      <td style="${N_TD}">n=${nOf(sums['D.Start'].H)}</td>
+      <td style="${N_TD}">n=${nOf(sums['Ring'].L)}</td>
+      <td style="${N_TD}">n=${nOf(sums['Echo'].L)}</td>
+      <td style="${N_TD}">n=${nOf(sums['D.End'].H)}</td>
+      <td style="${N_TD}">n=${nOf(sums['D.End'].L)}</td>
+      <td style="${N_TD}">n=${nOf(sums['Dist'])}</td>
+      ${pauseN?`<td style="${N_TD}">n=${pauseN}</td>`:''}
+    </tr>`;
+
+    const mkDataRow=(dsL,dsH,rL,eL,deH,deL,dist,pause)=>`<tr>
+      <td style="${SUM_TD(dsL)}">${dsL}</td>
+      <td style="${SUM_TD(dsH)}">${dsH}</td>
+      <td style="${SUM_TD(rL)}">${rL}</td>
+      <td style="${SUM_TD(eL)}">${eL}</td>
+      <td style="${SUM_TD(deH)}">${deH}</td>
+      <td style="${SUM_TD(deL)}">${deL}</td>
+      <td style="${SUM_TD(dist)}">${dist}</td>
+      ${pauseN?`<td style="${SUM_TD(pause)}">${pause}</td>`:''}
+    </tr>`;
+
+    const mkTable=(title,dsL,dsH,rL,eL,deH,deL,dist,pause)=>`
+      <div style="overflow-x:auto;"><div style="font-size:9px;color:var(--muted);letter-spacing:.08em;
+        text-transform:uppercase;padding:0 0 4px 4px;">${title}</div>
+      <table style="border-collapse:collapse;"><tbody>
+        ${hdrRow}${subRow}${nRow}${mkDataRow(dsL,dsH,rL,eL,deH,deL,dist,pause)}
+      </tbody></table></div>`;
+
+    html+=`<div class="summary-block" style="margin-top:8px;padding-top:6px;display:flex;flex-wrap:wrap;gap:12px;">`;
+    html+=mkTable('Average Duration by Group (µs)',
+      avgUs(sums['D.Start'].L), avgUs(sums['D.Start'].H), avgUs(sums['Ring'].L),
+      avgUs(sums['Echo'].L), avgUs(sums['D.End'].H), avgUs(sums['D.End'].L),
+      avgRaw(sums['Dist']), avgUs(pauseDurs));
+    html+=mkTable('Max Duration by Group (µs)',
+      maxUs(sums['D.Start'].L), maxUs(sums['D.Start'].H), maxUs(sums['Ring'].L),
+      maxUs(sums['Echo'].L), maxUs(sums['D.End'].H), maxUs(sums['D.End'].L),
+      maxRaw(sums['Dist']), maxUs(pauseDurs));
+    html+=mkTable('Min Duration by Group (µs)',
+      minUs(sums['D.Start'].L), minUs(sums['D.Start'].H), minUs(sums['Ring'].L),
+      minUs(sums['Echo'].L), minUs(sums['D.End'].H), minUs(sums['D.End'].L),
+      minRaw(sums['Dist']), minUs(pauseDurs));
+    html+=`</div>`;
 
     html+=`</div>`;
   });
