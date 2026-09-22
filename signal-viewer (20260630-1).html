@@ -1412,50 +1412,57 @@ function buildSegmentGroups(segs,thr){
 }
 
 // ── Detection Mode: pattern classifier ──
-// Real 9-segment pattern from data:
-//   L~100µs, H~100µs, L~0.8-1.6ms, H~1-2ms, L~100-600µs, H~5-20ms, L~100µs, H~50µs, L~100µs
-// Groups: D.Start(0-1), Ring(2), —(3-4), —(5), D.End(6-7-8... wait user said D.End = H50+L100 = segs 7-8)
-const DET_SEG_COUNT = 9;
-const DET_RANGES = {
-  0: [30, 300],     // L ~100µs  (D.Start)
-  1: [30, 300],     // H ~100µs  (D.Start)
-  2: [800, 2000],   // L ring time
-  3: [500, 3000],   // H echo/response ~1.5ms
-  4: [30, 600],     // L ~240µs
-  5: [3000,25000],  // H ~13ms listen window
-  6: [30, 300],     // L ~100µs
-  7: [15, 200],     // H ~50µs   (D.End)
-  8: [30, 300],     // L ~100µs  (D.End)
+// Variable-length pattern: D.Start(L+H) → Ring(L) → Echo(variable H/L pairs) → D.End(H short + L)
+// D.End is identified by a very short H (<200µs) followed by L, after at least one echo segment.
+const DET_R={
+  DSL:[30,300], DSH:[15,300], RING:[800,2000], DEH:[15,200], DEL:[30,300]
 };
-const DET_STATES = ['L','H','L','H','L','H','L','H','L'];
 
 function classifyDetectionSets(segs){
   const sets=[];
   const segGroup=new Array(segs.length).fill(null);
   const setIndex=new Array(segs.length).fill(-1);
 
-  for(let i=0;i<=segs.length-DET_SEG_COUNT;i++){
-    let ok=true;
-    for(let k=0;k<DET_SEG_COUNT;k++){
-      if(segs[i+k].state!==DET_STATES[k]){ok=false;break;}
-      const v=toUs(segs[i+k].dur);
-      if(v<DET_RANGES[k][0]||v>DET_RANGES[k][1]){ok=false;break;}
+  for(let i=0;i<=segs.length-5;i++){
+    // D.Start: L [30-300µs], H [15-300µs]
+    if(segs[i].state!=='L') continue;
+    let v=toUs(segs[i].dur);
+    if(v<DET_R.DSL[0]||v>DET_R.DSL[1]) continue;
+    if(i+1>=segs.length||segs[i+1].state!=='H') continue;
+    v=toUs(segs[i+1].dur);
+    if(v<DET_R.DSH[0]||v>DET_R.DSH[1]) continue;
+    // Ring: L [800-2000µs]
+    if(i+2>=segs.length||segs[i+2].state!=='L') continue;
+    v=toUs(segs[i+2].dur);
+    if(v<DET_R.RING[0]||v>DET_R.RING[1]) continue;
+    // After Ring, expect H (first echo). Scan for D.End: short H + L
+    if(i+3>=segs.length||segs[i+3].state!=='H') continue;
+    let dEnd=-1;
+    const maxJ=Math.min(i+20,segs.length-1);
+    for(let j=i+3;j<maxJ;j+=2){
+      if(segs[j].state!=='H') break;
+      const hUs=toUs(segs[j].dur);
+      if(j+1>maxJ||segs[j+1].state!=='L') break;
+      const lUs=toUs(segs[j+1].dur);
+      if(hUs>=DET_R.DEH[0]&&hUs<=DET_R.DEH[1]&&lUs>=DET_R.DEL[0]&&lUs<=DET_R.DEL[1]){
+        dEnd=j; break;
+      }
     }
-    if(!ok) continue;
+    if(dEnd<0||dEnd<=i+3) continue; // need at least one echo H before D.End
 
+    const endIdx=dEnd+1;
     const si=sets.length;
-    sets.push({startIdx:i, endIdx:i+DET_SEG_COUNT-1});
-    segGroup[i]  ={label:'D.Start',color:CH_COLORS[2]};
-    segGroup[i+1]={label:'D.Start',color:CH_COLORS[2]};
-    segGroup[i+2]={label:'Ring',   color:CH_COLORS[3]};
-    segGroup[i+3]={label:'Echo',    color:CH_COLORS[1]||'#34d399'};
-    segGroup[i+4]={label:'Echo',    color:CH_COLORS[1]||'#34d399'};
-    segGroup[i+5]={label:'Echo',    color:CH_COLORS[1]||'#34d399'};
-    segGroup[i+6]={label:'Echo',    color:CH_COLORS[1]||'#34d399'};
-    segGroup[i+7]={label:'D.End',  color:CH_COLORS[0]||'#60a5fa'};
-    segGroup[i+8]={label:'D.End',  color:CH_COLORS[0]||'#60a5fa'};
-    for(let j=i;j<=i+DET_SEG_COUNT-1;j++) setIndex[j]=si;
-    i+=DET_SEG_COUNT-1;
+    sets.push({startIdx:i, endIdx:endIdx});
+    segGroup[i]  ={label:'D.Start',color:CH_COLORS[2],range:DET_R.DSL};
+    segGroup[i+1]={label:'D.Start',color:CH_COLORS[2],range:DET_R.DSH};
+    segGroup[i+2]={label:'Ring',   color:CH_COLORS[3],range:DET_R.RING};
+    for(let j=i+3;j<dEnd;j++){
+      segGroup[j]={label:'Echo',color:CH_COLORS[1]||'#34d399',range:null};
+    }
+    segGroup[dEnd]  ={label:'D.End',color:CH_COLORS[0]||'#60a5fa',range:DET_R.DEH};
+    segGroup[dEnd+1]={label:'D.End',color:CH_COLORS[0]||'#60a5fa',range:DET_R.DEL};
+    for(let j=i;j<=endIdx;j++) setIndex[j]=si;
+    i=endIdx;
   }
   return {sets,segGroup,setIndex};
 }
@@ -2992,16 +2999,14 @@ function drawSchmitt(){
     ctx.setLineDash([]);
 
     if(analysisMode==='detection'){
-      const {sets:_detSets,setIndex:_detSetIdx}=classifyDetectionSets(segs);
+      const {segGroup:_detSegGrp,setIndex:_detSetIdx}=classifyDetectionSets(segs);
       segs.forEach((seg,si)=>{
         if(seg.tEnd<tMin||seg.tStart>tMax) return;
-        const sIdx=_detSetIdx[si];
-        if(sIdx<0) return;
-        const posInSet=si-_detSets[sIdx].startIdx;
-        const range=DET_RANGES[posInSet];
-        if(!range) return;
+        if(_detSetIdx[si]<0) return;
+        const grp=_detSegGrp[si];
+        if(!grp||!grp.range) return;
         const val=toUs(seg.dur);
-        if(val<range[0]||val>range[1]){
+        if(val<grp.range[0]||val>grp.range[1]){
           const x1=tx(seg.tStart), x2=tx(seg.tEnd);
           ctx.strokeRect(x1-1,highY-NG_PAD,x2-x1+2,lowY-highY+2*NG_PAD);
         }
@@ -3656,13 +3661,9 @@ function drawDetectionDurationChart(wrap,activeChs){
     html+=`<tr style="background:var(--surface);"><td style="${TD('var(--text)','','center')}font-size:9px;">µs</td>`;
     segs.forEach((seg,si)=>{
       const val=toUs(seg.dur);
-      const sIdx=setIndex[si];
       let ng=false;
-      if(sIdx>=0){
-        const posInSet=si-sets[sIdx].startIdx;
-        const range=DET_RANGES[posInSet];
-        if(range) ng=val<range[0]||val>range[1];
-      }
+      const grp=segGroup[si];
+      if(grp&&grp.range) ng=val<grp.range[0]||val>grp.range[1];
       const bdr=ng?`2px solid ${CH_COLORS[1]}`:'1px solid var(--border)';
       html+=`<td style="padding:3px 10px;font-size:10px;border:${bdr};text-align:right;
         color:var(--text);font-family:JetBrains Mono,monospace;">${val.toFixed(1)}</td>`;
@@ -3676,14 +3677,18 @@ function drawDetectionDurationChart(wrap,activeChs){
     // ── Summary table: average per detection group ──
     const sums={'D.Start':{L:[],H:[]}, 'Ring':{L:[]}, 'Echo':{H:[],L:[]}, 'D.End':{H:[],L:[]}};
     sets.forEach(set=>{
-      const s=set.startIdx;
+      const s=set.startIdx, e=set.endIdx;
       sums['D.Start'].L.push(segs[s].dur);
       sums['D.Start'].H.push(segs[s+1].dur);
       sums['Ring'].L.push(segs[s+2].dur);
-      sums['Echo'].H.push(segs[s+3].dur);
-      sums['Echo'].L.push(segs[s+4].dur);
-      sums['D.End'].H.push(segs[s+7].dur);
-      sums['D.End'].L.push(segs[s+8].dur);
+      for(let j=s+3;j<e-1;j++){
+        if(segGroup[j]&&segGroup[j].label==='Echo'){
+          if(segs[j].state==='H') sums['Echo'].H.push(segs[j].dur);
+          else sums['Echo'].L.push(segs[j].dur);
+        }
+      }
+      sums['D.End'].H.push(segs[e-1].dur);
+      sums['D.End'].L.push(segs[e].dur);
     });
     const avgOrNA=arr=>arr&&arr.length?toUs(arr.reduce((a,v)=>a+v,0)/arr.length).toFixed(1):'NA';
     const gAvg={
